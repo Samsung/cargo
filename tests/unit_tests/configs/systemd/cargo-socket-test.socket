@@ -1,0 +1,9 @@
+[Socket]
+ListenStream=/run/cargo-socket-test.socket
+SocketMode=0755
+SmackLabelIPIn=*
+SmackLabelIPOut=@
+Service=cargo-socket-test.service
+
+[Install]
+WantedBy=sockets.target

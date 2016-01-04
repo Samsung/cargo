@@ -1,0 +1,13 @@
+// public API functions (or write tests to use them all)
+unusedFunction:libs/cargo/kvstore.cpp
+unusedFunction:libs/ipc/internals/processor.cpp
+unusedFunction:common/utils/fd-utils.cpp
+
+// complains that all constructors with 1 argument should be explicit
+noExplicitConstructor
+
+// required for C abstraction
+unusedStructMember:common/utils/initctl.cpp
+
+// functions called by external utilities
+unusedFunction:tests/unit_tests/ut.cpp

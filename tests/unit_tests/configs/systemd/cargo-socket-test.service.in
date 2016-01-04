@@ -1,0 +1,9 @@
+[Unit]
+Description=Socket tests mini-service
+
+[Service]
+Type=simple
+ExecStart=${CMAKE_INSTALL_PREFIX}/bin/cargo-socket-test
+Sockets=cargo-socket-test.socket
+StartLimitInterval=0
+StartLimitBurst=0
