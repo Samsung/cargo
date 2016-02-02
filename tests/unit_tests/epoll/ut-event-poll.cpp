@@ -154,7 +154,7 @@ void doSocketTest(EventPoll& poll)
                 std::string msg(RESPONSE.size(), 'x');
                 socket.read(&msg.front(), msg.size());
                 response.set(msg);
-            } catch (UtilsException&) {
+            } catch (const UtilsException&) {
                 response.set(std::string());
             }
             poll.modifyFD(socket.getFD(), EPOLLRDHUP);

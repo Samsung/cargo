@@ -50,7 +50,7 @@ namespace internals {
 
 namespace {
 const int MAX_QUEUE_LENGTH = 1000;
-const int RETRY_CONNECT_STEP_MS = 10;
+const int RETRY_CONNECT_STEP_MS = 100;
 const int UNIX_SOCKET_PROTOCOL = 0;
 
 void setFdOptions(const int fd)

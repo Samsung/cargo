@@ -92,6 +92,14 @@ void saveFileContent(const std::string& path, const std::string& content);
 void readFirstLineOfFile(const std::string& path, std::string& ret);
 
 /**
+ * Remove directory and its content. Throws exception on error
+ * @return:
+ *    true if directory sucessfuly removed
+ *    false if directory does not exist
+ */
+bool removeDir(const std::string& path);
+
+/**
  * Checks if a path exists and points to an expected item type.
  * @return: true if exists and is a directory, false otherwise
  */
@@ -191,10 +199,15 @@ void copyDirContents(const std::string& src, const std::string& dst);
 void createDir(const std::string& path, uid_t uid, uid_t gid, boost::filesystem::perms mode);
 
 /**
- * Recursively creates a directory with specific permissions set.
+ * Creates a path directories with specific permissions set.
  * Throws exception on error
  */
-void createDirs(const std::string& path, mode_t mode);
+void createDirs(const std::string& path, mode_t mode = 0755);
+
+/**
+ * Recursively do lchown on directory
+ */
+void chownDir(const std::string& path, uid_t uid, uid_t gid);
 
 /**
  * Creates an empty directory, ready to serve as mount point.

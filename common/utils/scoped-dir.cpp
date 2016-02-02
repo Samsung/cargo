@@ -25,13 +25,11 @@
 #include "config.hpp"
 
 #include "utils/scoped-dir.hpp"
-
-#include <boost/filesystem.hpp>
-
+#include "utils/fs.hpp"
+#include "utils/exception.hpp"
+#include "logger/logger.hpp"
 
 namespace utils {
-
-namespace fs = boost::filesystem;
 
 ScopedDir::ScopedDir()
 {
@@ -52,16 +50,20 @@ void ScopedDir::create(const std::string& path)
     remove();
     if (!path.empty()) {
         mPath = path;
-        fs::remove_all(path);
-        fs::create_directories(path);
+        remove();
+        utils::createDirs(path);
     }
 }
 
 void ScopedDir::remove()
 {
-    if (!mPath.empty()) {
-        fs::remove_all(mPath);
-        mPath.clear();
+    if (mPath.empty()) {
+        return ;
+    }
+    try {
+        utils::removeDir(mPath);
+    } catch (const UtilsException&) {
+        LOGE("ScopedDir: can't remove " + mPath);
     }
 }
 

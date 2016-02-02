@@ -28,6 +28,8 @@
 #include "utils/execute.hpp"
 #include "logger/logger.hpp"
 
+#include <iostream>
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -98,20 +100,21 @@ bool executeAndWait(const std::function<void()>& func)
 
 bool executeAndWait(const uid_t uid, const char* fname, const char* const* argv, int& status)
 {
-    LOGD("Execute " << fname << argv);
+    LOGD("Execute " << (uid == UNSPEC_UID ? "" : "as " + std::to_string(uid) + " ") << fname << argv);
 
     pid_t pid = ::fork();
     if (pid == -1) {
         LOGE("Fork failed: " << getSystemErrorMessage());
         return false;
     }
+
     if (pid == 0) {
         if (uid != UNSPEC_UID && ::setuid(uid) < 0) {
             LOGW("Failed to become uid(" << uid << "): " << getSystemErrorMessage());
             ::_exit(EXIT_FAILURE);
         }
         ::execv(fname, const_cast<char* const*>(argv));
-        LOGE("execv failed: " << getSystemErrorMessage());
+        LOGE("execv(" << fname << ") failed: " << getSystemErrorMessage());
         ::_exit(EXIT_FAILURE);
     }
     return waitPid(pid, status);
@@ -119,7 +122,7 @@ bool executeAndWait(const uid_t uid, const char* fname, const char* const* argv,
 
 bool executeAndWait(const char* fname, const char* const* argv, int& status)
 {
-    return executeAndWait(-1, fname, argv, status);
+    return executeAndWait(UNSPEC_UID, fname, argv, status);
 }
 
 bool executeAndWait(const char* fname, const char* const* argv)
@@ -133,6 +136,8 @@ bool executeAndWait(const char* fname, const char* const* argv)
 
 bool waitPid(pid_t pid, int& status)
 {
+    LOGD("Wait pid " << pid);
+
     while (::waitpid(pid, &status, 0) == -1) {
         if (errno != EINTR) {
             LOGE("waitpid() failed: " << getSystemErrorMessage());

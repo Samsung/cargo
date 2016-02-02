@@ -43,11 +43,15 @@ public:
                const std::string &field_name,
                const T& value)
     {
-        if (!func(value)) {
-            const std::string msg = "validation failed on field: " +
-                                    field_name +
-                                    "(" + std::string(typeid(value).name()) + ")";
-            throw VerificationException(msg);
+        try {
+            if (!func(value)) {
+                const std::string msg = "validation failed on field: " +
+                                        field_name +
+                                        "(" + std::string(typeid(value).name()) + ")";
+                throw VerificationException(msg);
+            }
+        } catch (const std::exception& e) {
+            throw VerificationException(e.what());
         }
     }
 

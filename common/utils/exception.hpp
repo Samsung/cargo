@@ -27,6 +27,7 @@
 #define COMMON_UTILS_EXCEPTION_HPP
 
 #include "logger/logger.hpp"
+#include <vector>
 #include <stdexcept>
 
 namespace utils {
@@ -113,6 +114,8 @@ struct EventFDException: public UtilsException {
     explicit EventFDException(const std::string& error) : UtilsException(error) {}
 };
 
+
+void fillInStackTrace(std::vector<std::string>& bt);
 
 } // namespace utils
 

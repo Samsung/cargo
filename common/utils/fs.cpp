@@ -51,6 +51,17 @@ namespace fs = boost::filesystem;
 
 namespace utils {
 
+namespace {
+
+class ScopedDirStruct final {
+public:
+    ScopedDirStruct(DIR *d) : dir(d) { }
+    ~ScopedDirStruct() { closedir(dir); }
+private:
+    DIR *dir;
+};
+
+}
 
 // ------------------- syscalls -------------------
 bool remove(const std::string& path)
@@ -112,17 +123,19 @@ void mount(const std::string& source,
                       mountflags,
                       data.c_str());
     if (ret == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Mount operation failure: source path: "
+        THROW_UTILS_EXCEPTION_ERRNO_E("Mount failed: source='"
              << source
-             << ", target path: "
+             << "' target='"
              << target
-             << ", filesystemtype: "
+             << "' filesystemtype='"
              << filesystemtype
-             << ", mountflags: "
+             << "' mountflags="
              << std::to_string(mountflags)
-             << ", data: "
-             << data, errno);
+             << " data='"
+             << data
+             << "'", errno);
     }
+    LOGD("mounted " << source << " on " << target << " " << filesystemtype << " (" << mountflags << ")");
 }
 
 void umount(const std::string& path, int flags)
@@ -292,33 +305,93 @@ void readFirstLineOfFile(const std::string& path, std::string& ret)
     }
 }
 
-bool exists(const std::string& path, int inodeType)
+bool removeDir(const std::string& path)
 {
+    //1. try rmdir, in case it is already empty or does not exist
     try {
-        assertExists(path, inodeType);
-        return true;
-    } catch(const UtilsException &) {
-        return false;
+        return utils::rmdir(path);
+    } catch (const UtilsException& e) {
+        if (e.mErrno != ENOTEMPTY && e.mErrno != EBUSY) {
+            throw;
+        }
     }
+
+    //2. not empty, do recursion
+    struct dirent storeEntry;
+    struct dirent *entry;
+    DIR *dir = ::opendir(path.c_str());
+
+    if (dir == NULL) {
+        if (errno == ENOENT) {
+            LOGD(path << ": was removed by other process.");
+            return false;
+        }
+        THROW_UTILS_EXCEPTION_E(path);
+    }
+
+    { //bracket to call scope destructor
+        ScopedDirStruct scopedir(dir);
+        while (::readdir_r(dir, &storeEntry, &entry) == 0 && entry != NULL) {
+            if (::strcmp(entry->d_name, ".") == 0 || ::strcmp(entry->d_name, "..") == 0) {
+                 continue;
+            }
+
+            std::string newpath = path + "/" + entry->d_name;
+            if (entry->d_type == DT_DIR) {
+                removeDir(newpath);
+            } else {
+                try {
+                    utils::remove(newpath.c_str());
+                } catch (const UtilsException&) {
+                    // Ignore any errors on file deletion
+                    // Error from rmdir on parent directory (in next step) will be returned anyway
+                    // Note: rmdir can be successful even if directory is not empty (like for cgroup filesystem)
+                    //       but first all child directories must be removed
+                }
+            }
+        }
+    }
+
+    utils::rmdir(path);
+    LOGD(path << ": successfuly removed.");
+    return true;
 }
 
 void assertExists(const std::string& path, int inodeType)
+{
+    if (!utils::exists(path, inodeType)) {
+        THROW_UTILS_EXCEPTION_E(path + ": not exists");
+    }
+}
+
+bool exists(const std::string& path, int inodeType)
 {
     if (path.empty()) {
         THROW_UTILS_EXCEPTION_E("Empty path");
     }
 
-    struct stat s = utils::stat(path);
+    struct ::stat s;
+    try {
+        s = utils::stat(path);
+    } catch (const UtilsException& e) {
+        if (e.mErrno == ENOENT) {
+            return false;
+        }
+        throw;
+    }
+
     if (inodeType != 0) {
         if (!(s.st_mode & inodeType)) {
-            THROW_UTILS_EXCEPTION_E(path << ": not an expected inode type, expected: " << std::to_string(inodeType) <<
-                                  ", while actual: " << std::to_string(s.st_mode));
+            LOGE(path << ": wrong inodeType, expected: " << std::to_string(inodeType) <<
+                                  ", actual: " << std::to_string(s.st_mode));
+            return false;
         }
 
         if (inodeType == S_IFDIR && !utils::access(path, X_OK)) {
             THROW_UTILS_EXCEPTION_ERRNO_E(path << ": not a traversable directory", errno);
         }
     }
+    return true;
 }
 
 bool isCharDevice(const std::string& path)
@@ -501,11 +574,6 @@ bool copyDirContentsRec(const boost::filesystem::path& src, const boost::filesys
     return false;
 }
 
-boost::filesystem::perms getPerms(const mode_t& mode)
-{
-    return static_cast<boost::filesystem::perms>(mode);
-}
-
 } // namespace
 
 void copyDirContents(const std::string& src, const std::string& dst)
@@ -548,31 +616,62 @@ void createDir(const std::string& path, uid_t uid, uid_t gid, boost::filesystem:
 
 void createDirs(const std::string& path, mode_t mode)
 {
-    const boost::filesystem::perms perms = getPerms(mode);
-    std::vector<fs::path> dirsCreated;
-    fs::path prefix;
-    const fs::path dirPath = fs::path(path);
-    for (const auto& dirSegment : dirPath) {
-        prefix /= dirSegment;
-        if (!fs::exists(prefix)) {
-            try {
-                createDir(prefix.string(), -1, -1, perms);
-                dirsCreated.push_back(prefix);
-            } catch(...) {
-                LOGE("Failed to create dir: " << prefix);
-                // undo
-                for (auto iter = dirsCreated.rbegin(); iter != dirsCreated.rend(); ++iter) {
-                    boost::system::error_code errorCode;
-                    fs::remove(*iter, errorCode);
-                    if (errorCode) {
-                        LOGE("Error during cleaning: dir: " << *iter
-                             << ", msg: " << errorCode.message());
-                    }
-                }
-                throw;
+    std::vector<std::string> created;
+
+    try {
+        std::string prefix = utils::beginsWith(path, "/") ? "" : ".";
+        std::vector<std::string> segments = utils::split(path, "/");
+
+        for (const auto& seg : segments) {
+            if (seg.empty()) {
+                continue;
+            }
+
+            prefix += "/" + seg;
+            if (utils::mkdir(prefix, mode)) {
+                created.push_back(prefix);
+                LOGI("dir created: " << prefix);
+            }
+        }
+    } catch (...) {
+        try {
+            for (auto iter = created.rbegin(); iter != created.rend(); ++iter) {
+                utils::rmdir(*iter);
+            }
+        } catch(...) {
+            LOGE("Failed to undo created dirs after an error");
+        }
+    }
+}
+
+void chownDir(const std::string& path, uid_t uid, uid_t gid)
+{
+    struct dirent storeEntry;
+    struct dirent *entry;
+    DIR *dir = ::opendir(path.c_str());
+
+    if (dir == NULL) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path, errno);
+    }
+
+    { //bracket to call scope destructor
+        ScopedDirStruct scopedir(dir);
+        while (::readdir_r(dir, &storeEntry, &entry) == 0 && entry != NULL) {
+            if (::strcmp(entry->d_name, ".") == 0 || ::strcmp(entry->d_name, "..") == 0) {
+                 continue;
+            }
+
+            std::string newpath = path + "/" + entry->d_name;
+            if (entry->d_type == DT_DIR) {
+                chownDir(newpath, uid, gid);
+            } else {
+                utils::lchown(newpath, uid, gid);
             }
         }
     }
+
+    utils::lchown(path, uid, gid);
+    LOGI(path << ": successfuly chown.");
 }
 
 void createEmptyDir(const std::string& path)

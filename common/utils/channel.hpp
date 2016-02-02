@@ -73,7 +73,7 @@ public:
      * Receive data of a given type (size)
      */
     template<typename Data>
-    Data read();
+    Data read(unsigned timeoutMS = 5000);
 
     /**
      * Get an active file descriptor
@@ -112,12 +112,12 @@ void Channel::write(const Data& data)
 }
 
 template<typename Data>
-Data Channel::read()
+Data Channel::read(unsigned timeoutMS)
 {
     assert(mSocketIndex != -1 && "Channel's end isn't set");
 
     Data data;
-    utils::read(mSockets[mSocketIndex], &data, sizeof(Data));
+    utils::read(mSockets[mSocketIndex], &data, sizeof(Data), timeoutMS);
     return data;
 }
 
