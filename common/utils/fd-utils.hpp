@@ -31,6 +31,9 @@
 
 namespace utils {
 
+// TODO: add check for errno==EINTR where applicable
+// (as few syscall wrappers already have it)
+
 /**
  * Open a file.
  */
@@ -39,7 +42,7 @@ int open(const std::string &path, int flags, mode_t mode = -1);
 /**
  * Close the file descriptor.
  */
-void close(int fd);
+void close(int fd) noexcept;
 
 /**
  * Shut down part of a full-duplex connection

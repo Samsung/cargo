@@ -27,6 +27,7 @@
 #include "utils/vt.hpp"
 #include "logger/logger.hpp"
 #include "utils/exception.hpp"
+#include "utils/fd-utils.hpp"
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -45,42 +46,33 @@ namespace utils {
 
 bool activateVT(const int& vt)
 {
-    int consoleFD = ::open(TTY_DEV.c_str(), O_WRONLY);
-    if (consoleFD < 0) {
-        LOGE("console open failed: " << errno << " (" << getSystemErrorMessage() << ")");
-        return false;
-    }
+    int consoleFD = -1;
 
-    struct vt_stat vtstat;
-    vtstat.v_active = 0;
-    if (::ioctl(consoleFD, VT_GETSTATE, &vtstat)) {
-        LOGE("Failed to get vt state: " << errno << " (" << getSystemErrorMessage() << ")");
-        ::close(consoleFD);
-        return false;
-    }
+    try {
+        consoleFD = utils::open(TTY_DEV, O_WRONLY);
 
-    if (vtstat.v_active == vt) {
-        LOGW("vt" << vt << " is already active.");
-        ::close(consoleFD);
+        struct vt_stat vtstat;
+        vtstat.v_active = 0;
+        utils::ioctl(consoleFD, VT_GETSTATE, &vtstat);
+
+        if (vtstat.v_active == vt) {
+            LOGW("vt" << vt << " is already active.");
+        }
+        else {
+            // activate vt
+            utils::ioctl(consoleFD, VT_ACTIVATE, reinterpret_cast<void*>(vt));
+
+            // wait until activation is finished
+            utils::ioctl(consoleFD, VT_WAITACTIVE, reinterpret_cast<void*>(vt));
+        }
+
+        utils::close(consoleFD);
         return true;
-    }
-
-    // activate vt
-    if (::ioctl(consoleFD, VT_ACTIVATE, vt)) {
-        LOGE("Failed to activate vt" << vt << ": " << errno << " (" << getSystemErrorMessage() << ")");
-        ::close(consoleFD);
+    } catch(const UtilsException & e) {
+        LOGE("Failed to activate vt" << vt << ": " << e.what() << " (" << getSystemErrorMessage(e.mErrno) << ")");
+        utils::close(consoleFD);
         return false;
     }
-
-    // wait until activation is finished
-    if (::ioctl(consoleFD, VT_WAITACTIVE, vt)) {
-        LOGE("Failed to wait for vt" << vt << " activation: " << errno << " (" << getSystemErrorMessage() << ")");
-        ::close(consoleFD);
-        return false;
-    }
-
-    ::close(consoleFD);
-    return true;
 }
 
 } // namespace utils

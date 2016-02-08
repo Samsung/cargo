@@ -68,8 +68,8 @@ void waitForFile(const std::string& file, const unsigned int timeoutMs)
         poll.dispatchIteration(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count());
     }
 
-    if(isWaiting) {
-        throw UtilsException("No such file: " + file);
+    if (isWaiting) {
+        THROW_UTILS_EXCEPTION_D("No such file: " << file);
     }
 }
 

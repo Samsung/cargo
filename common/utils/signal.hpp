@@ -29,10 +29,21 @@
 #include <csignal>
 #include <vector>
 
-
 namespace utils {
 
+// ------------------- syscall wrappers -------------------
+// Throw exception on error
+void pthread_sigmask(int how, const ::sigset_t *set, ::sigset_t *get);
+void sigemptyset(::sigset_t *set);
+void sigfillset(::sigset_t *set);
+void sigaddset(::sigset_t *set, int signum);
+void sigpending(::sigset_t *set);
+bool sigismember(const ::sigset_t *set, int signum);
+int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *timeout);
+void sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
 
+
+// ------------------- higher level functions -------------------
 ::sigset_t getSignalMask();
 bool isSignalPending(const int sigNum);
 bool waitForSignal(const int sigNum, int timeoutMs);

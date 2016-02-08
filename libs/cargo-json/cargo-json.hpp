@@ -26,9 +26,9 @@
 #ifndef CARGO_JSON_CARGO_JSON_HPP
 #define CARGO_JSON_CARGO_JSON_HPP
 
+#include "utils/fs.hpp"
 #include "cargo-json/internals/to-json-visitor.hpp"
 #include "cargo-json/internals/from-json-visitor.hpp"
-#include "cargo-json/internals/fs-utils.hpp"
 
 namespace cargo {
 
@@ -73,11 +73,7 @@ std::string saveToJsonString(const Cargo& visitable)
 template <class Cargo>
 void loadFromJsonFile(const std::string& filename, Cargo& visitable)
 {
-    std::string content;
-    if (!internals::fsutils::readFileContent(filename, content)) {
-        const std::string& msg = "Could not load " + filename;
-        throw CargoException(msg);
-    }
+    const std::string content = utils::readFileContent(filename);
     try {
         loadFromJsonString(content, visitable);
     } catch (CargoException& e) {
@@ -96,9 +92,7 @@ template <class Cargo>
 void saveToJsonFile(const std::string& filename, const Cargo& visitable)
 {
     const std::string content = saveToJsonString(visitable);
-    if (!internals::fsutils::saveFileContent(filename, content)) {
-        throw CargoException("Could not save " + filename);
-    }
+    utils::saveFileContent(filename, content);
 }
 
 } // namespace cargo

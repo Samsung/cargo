@@ -25,8 +25,11 @@
 #include "config.hpp"
 
 #include "logger/logger.hpp"
+#include "utils/fd-utils.hpp"
 #include "utils/fs.hpp"
 #include "utils/paths.hpp"
+#include "utils/smack.hpp"
+#include "utils/text.hpp"
 #include "utils/exception.hpp"
 
 #include <boost/filesystem.hpp>
@@ -40,20 +43,199 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/syscall.h>
 
 #include <iostream>
-
 
 namespace fs = boost::filesystem;
 
 namespace utils {
 
+
+// ------------------- syscalls -------------------
+bool remove(const std::string& path)
+{
+    if (::remove(path.c_str()) == -1) {
+        if (errno == ENOENT) {
+            LOGW(path << ": not removed, path does not exist");
+            return false;
+        }
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": failed to remove", errno);
+    }
+
+    return true;
+}
+
+struct ::stat stat(const std::string & path)
+{
+    struct ::stat s;
+    if (::stat(path.c_str(), &s) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": failed to get stat", errno);
+    }
+    return s;
+}
+
+struct ::statfs statfs(const std::string & path)
+{
+    int rc;
+    struct ::statfs s;
+    do {
+        rc = ::statfs(path.c_str(), &s);
+    } while (rc == -1 && errno == EINTR);
+
+    if (rc == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": failed to get statfs", errno);
+    }
+    return s;
+}
+
+bool access(const std::string& path, int mode)
+{
+    if (::access(path.c_str(), mode) == -1) {
+        if (errno == EACCES) {
+            return false;
+        }
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": trying to access() failed", errno);
+    }
+    return true;
+}
+
+void mount(const std::string& source,
+           const std::string& target,
+           const std::string& filesystemtype,
+           unsigned long mountflags,
+           const std::string& data)
+{
+    int ret = ::mount(source.c_str(),
+                      target.c_str(),
+                      filesystemtype.c_str(),
+                      mountflags,
+                      data.c_str());
+    if (ret == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Mount operation failure: source path: "
+             << source
+             << ", target path: "
+             << target
+             << ", filesystemtype: "
+             << filesystemtype
+             << ", mountflags: "
+             << std::to_string(mountflags)
+             << ", data: "
+             << data, errno);
+    }
+}
+
+void umount(const std::string& path, int flags)
+{
+    if (::umount2(path.c_str(), flags) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": umount failed", errno);
+    }
+}
+
+void mkfifo(const std::string& path, mode_t mode)
+{
+    if (::mkfifo(path.c_str(), mode) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": failed to create fifo", errno);
+    }
+}
+
+void chown(const std::string& path, uid_t uid, gid_t gid)
+{
+    // set owner
+    if (::chown(path.c_str(), uid, gid) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": chown() failed", errno);
+    }
+}
+
+void lchown(const std::string& path, uid_t uid, gid_t gid)
+{
+    // set owner of a symlink
+    if (::lchown(path.c_str(), uid, gid) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": lchown() failed", errno);
+    }
+}
+
+void chmod(const std::string& path, mode_t mode)
+{
+    if (::chmod(path.c_str(), mode) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": chmod() failed", errno);
+    }
+}
+
+void link(const std::string& src, const std::string& dst)
+{
+    if (::link(src.c_str(), dst.c_str()) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("path=host:" << src << ": failed to hard link to path=host:" << dst, errno);
+    }
+}
+
+void symlink(const std::string& target, const std::string& linkpath)
+{
+    if (::symlink(target.c_str(), linkpath.c_str()) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(target << ": symlink(" << linkpath << ") failed", errno);
+    }
+}
+
+void fchdir(int fd)
+{
+    if (::fchdir(fd) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("fd:" << std::to_string(fd) << ": fchdir() failed", errno);
+    }
+}
+
+void chdir(const std::string& path)
+{
+    if (::chdir(path.c_str()) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": chdir() failed", errno);
+    }
+}
+
+bool mkdir(const std::string& path, mode_t mode)
+{
+    if (::mkdir(path.c_str(), mode) == -1) {
+        if (errno == EEXIST) {
+            return false;
+        }
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": mkdir() failed", errno);
+    }
+    return true;
+}
+
+bool rmdir(const std::string& path)
+{
+    if (::rmdir(path.c_str()) == -1) {
+        if (errno == ENOENT) {
+            LOGW(path << ": not removed, directory does not exist");
+            return false;
+        }
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": failed to rmdir", errno);
+    }
+
+    return true;
+}
+
+void mknod(const std::string& path, mode_t mode, dev_t dev)
+{
+    if (::mknod(path.c_str(), mode, dev) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": mknod() failed", errno);
+    }
+}
+
+void pivot_root(const std::string& new_root, const std::string& put_old)
+{
+    if (::syscall(SYS_pivot_root, new_root.c_str(), put_old.c_str()) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E(new_root << ": pivot_root() failed", errno);
+    }
+}
+
+
+// ------------------- higher level functions -------------------
 std::string readFileStream(const std::string& path)
 {
     std::ifstream file(path);
 
     if (!file) {
-        throw UtilsException("Read failed");
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": read failed", errno);
     }
     // 2 x faster then std::istreambuf_iterator
     std::stringstream content;
@@ -61,99 +243,53 @@ std::string readFileStream(const std::string& path)
     return content.str();
 }
 
-bool readFileStream(const std::string& path, std::string& result)
-{
-    std::ifstream file(path);
-
-    if (!file) {
-        return false;
-    }
-    std::stringstream content;
-    content << file.rdbuf();
-    result = content.str();
-    return true;
-}
-
 std::string readFileContent(const std::string& path)
 {
-    std::string result;
-
-    if (!readFileContent(path, result)) {
-        throw UtilsException("Read failed");
-    }
-    return result;
-}
-
-bool readFileContent(const std::string& path, std::string& result)
-{
     std::ifstream file(path);
 
     if (!file) {
-        LOGD(path << ": could not open for reading");
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": could not open for reading", errno);
     }
 
     file.seekg(0, std::ios::end);
     std::streampos length = file.tellg();
     if (length < 0) {
-        LOGD(path << ": tellg failed");
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": tellg failed", errno);
     }
+    std::string result;
     result.resize(static_cast<size_t>(length));
     file.seekg(0, std::ios::beg);
 
     file.read(&result[0], length);
     if (!file) {
-        LOGD(path << ": read error");
-        result.clear();
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": read error", errno);
     }
-
-    return true;
+    return result;
 }
 
-bool saveFileContent(const std::string& path, const std::string& content)
+void saveFileContent(const std::string& path, const std::string& content)
 {
     std::ofstream file(path);
     if (!file) {
-        LOGD(path << ": could not open for writing");
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": could not open for writing", errno);
     }
     file.write(content.data(), static_cast<std::streamsize>(content.size()));
     if (!file) {
-        LOGD(path << ": could not write to");
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": could not write to", errno);
     }
-    return true;
 }
 
-bool readFirstLineOfFile(const std::string& path, std::string& ret)
+void readFirstLineOfFile(const std::string& path, std::string& ret)
 {
     std::ifstream file(path);
     if (!file) {
-        LOGD(path << ": could not open for reading");
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": could not open for reading", errno);
     }
 
     std::getline(file, ret);
     if (!file) {
-        LOGD(path << ": read error");
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(path << ": read error", errno);
     }
-    return true;
-}
-
-bool removeFile(const std::string& path)
-{
-    if (::remove(path.c_str())) {
-        if (errno != ENOENT) {
-            LOGE(path << ": failed to delete: " << getSystemErrorMessage());
-            return false;
-        }
-    }
-    LOGD(path << ": successfuly removed.");
-
-    return true;
 }
 
 bool exists(const std::string& path, int inodeType)
@@ -161,7 +297,7 @@ bool exists(const std::string& path, int inodeType)
     try {
         assertExists(path, inodeType);
         return true;
-    } catch(...) {
+    } catch(const UtilsException &) {
         return false;
     }
 }
@@ -169,30 +305,18 @@ bool exists(const std::string& path, int inodeType)
 void assertExists(const std::string& path, int inodeType)
 {
     if (path.empty()) {
-        const std::string msg = "Empty path";
-        LOGE(msg);
-        throw UtilsException(msg);
+        THROW_UTILS_EXCEPTION_E("Empty path");
     }
 
-    struct stat s;
-    if (::stat(path.c_str(), &s)) {
-        const std::string msg = "Error in stat() " + path + ": " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
+    struct stat s = utils::stat(path);
     if (inodeType != 0) {
         if (!(s.st_mode & inodeType)) {
-            const std::string msg = "Not an expected inode type, expected: " + std::to_string(inodeType) +
-                                    ", while actual: " + std::to_string(s.st_mode);
-            LOGE(msg);
-            throw UtilsException(msg);
+            THROW_UTILS_EXCEPTION_E(path << ": not an expected inode type, expected: " << std::to_string(inodeType) <<
+                                  ", while actual: " << std::to_string(s.st_mode));
         }
 
-        if (inodeType == S_IFDIR && ::access(path.c_str(), X_OK) < 0) {
-            const std::string msg = "Not a traversable directory";
-            LOGE(msg);
-            throw UtilsException(msg);
+        if (inodeType == S_IFDIR && !utils::access(path, X_OK)) {
+            THROW_UTILS_EXCEPTION_ERRNO_E(path << ": not a traversable directory", errno);
         }
     }
 }
@@ -230,9 +354,7 @@ bool isAbsolute(const std::string& path)
 void assertIsAbsolute(const std::string& path)
 {
     if (!isAbsolute(path)) {
-        const std::string msg = "Given path '" + path + "' must be absolute!";
-        LOGE(msg);
-        throw UtilsException(msg);
+        THROW_UTILS_EXCEPTION_D(path << ": must be absolute!");
     }
 }
 
@@ -243,127 +365,84 @@ const std::string RUN_MOUNT_POINT_OPTIONS = "mode=755,smackfstransmute=System::R
 const std::string RUN_MOUNT_POINT_OPTIONS_NO_SMACK = "mode=755";
 const unsigned long RUN_MOUNT_POINT_FLAGS = MS_NOSUID | MS_NODEV | MS_STRICTATIME;
 
-bool mountTmpfs(const std::string& path, unsigned long flags, const std::string& options)
+int mountTmpfs(const std::string& path, unsigned long flags, const std::string& options)
 {
-    if (::mount("tmpfs", path.c_str(), "tmpfs", flags, options.c_str()) != 0) {
-        LOGD("Mount failed for '" << path << "', options=" << options << ": " << getSystemErrorMessage());
-        return false;
+    try {
+        utils::mount("tmpfs", path.c_str(), "tmpfs", flags, options.c_str());
+        return 0;
+    } catch(const UtilsException & e) {
+        return e.mErrno;
     }
-    return true;
 }
 
 } // namespace
 
-bool mountRun(const std::string& path)
+void mountRun(const std::string& path)
 {
-    return utils::mountTmpfs(path, RUN_MOUNT_POINT_FLAGS, RUN_MOUNT_POINT_OPTIONS)
-           || utils::mountTmpfs(path, RUN_MOUNT_POINT_FLAGS, RUN_MOUNT_POINT_OPTIONS_NO_SMACK);
-}
-
-bool mount(const std::string& source,
-           const std::string& target,
-           const std::string& filesystemtype,
-           unsigned long mountflags,
-           const std::string& data)
-{
-    int ret = ::mount(source.c_str(),
-                      target.c_str(),
-                      filesystemtype.c_str(),
-                      mountflags,
-                      data.c_str());
-    if (ret < 0) {
-        LOGE("Mount operation failure: "
-             << "source path: "
-             << source
-             << ", target path: "
-             << target
-             << ", filesystemtype: "
-             << filesystemtype
-             << ", mountflags: "
-             << mountflags
-             << ", data: "
-             << data
-             << ", msg: "
-             << getSystemErrorMessage());
-        return false;
+    if (utils::mountTmpfs(path, RUN_MOUNT_POINT_FLAGS, RUN_MOUNT_POINT_OPTIONS)) {
+        int errno_ = utils::mountTmpfs(path, RUN_MOUNT_POINT_FLAGS, RUN_MOUNT_POINT_OPTIONS_NO_SMACK);
+        if (errno_) {
+            THROW_UTILS_EXCEPTION_ERRNO_E(path << ": mount failed", errno_);
+        }
     }
-    return true;
 }
 
-bool umount(const std::string& path)
-{
-    if (::umount(path.c_str()) != 0) {
-        LOGE("Umount failed for '" << path << "': " << getSystemErrorMessage());
-        return false;
-    }
-    return true;
-}
-
-bool isMountPoint(const std::string& path, bool& result)
+bool isMountPoint(const std::string& path)
 {
     std::string parentPath = dirName(path);
-    bool newResult;
-    if (!hasSameMountPoint(path, parentPath, newResult)) {
-        LOGE("Failed to check the files' mount points");
-        return false;
-    }
-
-    result = !newResult;
-    return true;
+    return ! hasSameMountPoint(path, parentPath);
 }
 
-bool hasSameMountPoint(const std::string& path1, const std::string& path2, bool& result)
+
+bool isMountPointShared(const std::string& path)
 {
-    struct stat s1, s2;
-
-    if (::stat(path1.c_str(), &s1)) {
-        LOGD("Failed to get stat of " << path1 << ": " << getSystemErrorMessage());
-        return false;
+    std::ifstream fileStream("/proc/self/mountinfo");
+    if (!fileStream.good()) {
+        THROW_UTILS_EXCEPTION_E(path << ": open failed");
     }
 
-    if (::stat(path2.c_str(), &s2)) {
-        LOGD("Failed to get stat of " << path2 << ": " << getSystemErrorMessage());
-        return false;
+    // Find the line corresponding to the path
+    std::string line;
+    while (std::getline(fileStream, line).good()) {
+        std::istringstream iss(line);
+        auto it = std::istream_iterator<std::string>(iss);
+        std::advance(it, 4);
+
+        if (it->compare(path)) {
+            // Wrong line, different path
+            continue;
+        }
+
+        // Right line, check if mount point shared
+        std::advance(it, 2);
+        return it->find("shared:") != std::string::npos;
     }
 
-    result = (s1.st_dev == s2.st_dev);
-    return true;
+    // Path not found
+    return false;
 }
 
-bool moveFile(const std::string& src, const std::string& dst)
+bool hasSameMountPoint(const std::string& path1, const std::string& path2)
 {
-    bool bResult;
+    return utils::stat(path1).st_dev == utils::stat(path2).st_dev;
+}
 
-    boost::system::error_code error;
-
+void moveFile(const std::string& src, const std::string& dst)
+{
     // The destination has to be a full path (including a file name)
     // so it doesn't exist yet, we need to check upper level dir instead.
-    if (!hasSameMountPoint(src, dirName(dst), bResult)) {
-        LOGE("Failed to check the files' mount points");
-        return false;
-    }
+    bool bResult = hasSameMountPoint(src, dirName(dst));
 
     if (bResult) {
+        boost::system::error_code error;
         fs::rename(src, dst, error);
         if (error) {
-            LOGE("Failed to rename the file: " << error);
-            return false;
+            THROW_UTILS_EXCEPTION_E(src << ": failed to rename to: " << dst << ", error: " << error.message());
         }
     } else {
-        fs::copy_file(src, dst, error);
-        if (error) {
-            LOGE("Failed to copy the file: " << error);
-            return false;
-        }
-        fs::remove(src, error);
-        if (error) {
-            LOGE("Failed to remove the file: " << error);
-            fs::remove(dst, error);
-            return false;
-        }
+        copyFile(src, dst);
+        utils::remove(src);
     }
-
-    return true;
 }
 
 namespace {
@@ -405,23 +484,21 @@ bool copyDirContentsRec(const boost::filesystem::path& src, const boost::filesys
             }
 
             // change owner
-            struct stat info;
-            ::stat(current.string().c_str(), &info);
+            struct stat info = utils::stat(current.string());
             if (fs::is_symlink(destination)) {
-                if (::lchown(destination.string().c_str(), info.st_uid, info.st_gid) < 0) {
-                    LOGW("Failed to change owner of symlink " << destination.string() << ": " << getSystemErrorMessage());
-                }
+                utils::lchown(destination.string(), info.st_uid, info.st_gid);
             } else {
-                if (::chown(destination.string().c_str(), info.st_uid, info.st_gid) < 0) {
-                    LOGW("Failed to change owner of file " << destination.string() << ": " << getSystemErrorMessage());
-                }
+                utils::chown(destination.string(), info.st_uid, info.st_gid);
             }
         }
-    } catch (fs::filesystem_error& e) {
+        return true;
+    } catch (const UtilsException& e) {
+        LOGW(e.what());
+    } catch (const fs::filesystem_error& e) {
         LOGW(e.what());
     }
 
-    return true;
+    return false;
 }
 
 boost::filesystem::perms getPerms(const mode_t& mode)
@@ -429,60 +506,47 @@ boost::filesystem::perms getPerms(const mode_t& mode)
     return static_cast<boost::filesystem::perms>(mode);
 }
 
-bool copySmackLabel(const std::string& /* src */, const std::string& /* dst */)
-{
-    //TODO: fill copySmackLabel function
-    return true;
-}
-
-
 } // namespace
 
-bool copyDirContents(const std::string& src, const std::string& dst)
+void copyDirContents(const std::string& src, const std::string& dst)
 {
-    return copyDirContentsRec(fs::path(src), fs::path(dst));
+    if (!copyDirContentsRec(fs::path(src), fs::path(dst))) {
+        THROW_UTILS_EXCEPTION_E(src << ": failed to copy contents to new location: " << dst);
+    }
 }
 
-bool createDir(const std::string& path, uid_t uid, uid_t gid, boost::filesystem::perms mode)
+void createDir(const std::string& path, uid_t uid, uid_t gid, boost::filesystem::perms mode)
 {
     fs::path dirPath(path);
     boost::system::error_code errorCode;
     bool runDirCreated = false;
     if (!fs::exists(dirPath)) {
         if (!fs::create_directory(dirPath, errorCode)) {
-            LOGE("Failed to create directory '" << path << "': "
-                 << errorCode.message());
-            return false;
+            THROW_UTILS_EXCEPTION_E(path << ": failed to create directory, error: " << errorCode.message());
         }
         runDirCreated = true;
     } else if (!fs::is_directory(dirPath)) {
-        LOGE("Path '" << path << " already exists");
-        return false;
+        THROW_UTILS_EXCEPTION_E(path << ": cannot create directory, already exists!");
     }
 
     // set permissions
     fs::permissions(dirPath, mode, errorCode);
     if (fs::status(dirPath).permissions() != mode) {
-        LOGE("Failed to set permissions to '" << path << "': "
-             << errorCode.message());
-        return false;
+        THROW_UTILS_EXCEPTION_E(path << ": failed to set permissions, error: " << errorCode.message());
     }
 
     // set owner
-    if (::chown(path.c_str(), uid, gid) != 0) {
-        int err = errno;
-        // remove the directory only if it hadn't existed before
+    try {
+        utils::chown(path, uid, gid);
+    } catch(...) {
         if (runDirCreated) {
             fs::remove(dirPath);
         }
-        LOGE("chown() failed for path '" << path << "': " << getSystemErrorMessage(err));
-        return false;
+        throw;
     }
-
-    return true;
 }
 
-bool createDirs(const std::string& path, mode_t mode)
+void createDirs(const std::string& path, mode_t mode)
 {
     const boost::filesystem::perms perms = getPerms(mode);
     std::vector<fs::path> dirsCreated;
@@ -491,11 +555,11 @@ bool createDirs(const std::string& path, mode_t mode)
     for (const auto& dirSegment : dirPath) {
         prefix /= dirSegment;
         if (!fs::exists(prefix)) {
-            bool created = createDir(prefix.string(), -1, -1, perms);
-            if (created) {
+            try {
+                createDir(prefix.string(), -1, -1, perms);
                 dirsCreated.push_back(prefix);
-            } else {
-                LOGE("Failed to create dir");
+            } catch(...) {
+                LOGE("Failed to create dir: " << prefix);
                 // undo
                 for (auto iter = dirsCreated.rbegin(); iter != dirsCreated.rend(); ++iter) {
                     boost::system::error_code errorCode;
@@ -505,14 +569,13 @@ bool createDirs(const std::string& path, mode_t mode)
                              << ", msg: " << errorCode.message());
                     }
                 }
-                return false;
+                throw;
             }
         }
     }
-    return true;
 }
 
-bool createEmptyDir(const std::string& path)
+void createEmptyDir(const std::string& path)
 {
     fs::path dirPath(path);
     boost::system::error_code ec;
@@ -520,113 +583,80 @@ bool createEmptyDir(const std::string& path)
 
     if (!fs::exists(dirPath)) {
         if (!fs::create_directory(dirPath, ec)) {
-            LOGE("Failed to create dir. Error: " << ec.message());
-            return false;
+            THROW_UTILS_EXCEPTION_E(dirPath.string() << ": failed to create dir, error: " << ec.message());
         }
         cleanDirCreated = true;
     } else if (!fs::is_directory(dirPath)) {
-        LOGE("Provided path already exists and is not a dir, cannot create.");
-        return false;
+        THROW_UTILS_EXCEPTION_E(dirPath.string() << ": already exists and is not a dir, cannot create.");
     }
 
     if (!cleanDirCreated) {
         // check if directory is empty if it was already created
         if (!fs::is_empty(dirPath)) {
-            LOGE("Directory has some data inside, cannot be used.");
-            return false;
+            THROW_UTILS_EXCEPTION_E(dirPath.string() << ": directory has some data inside, cannot be used.");
         }
     }
-
-    return true;
 }
 
-bool createFile(const std::string& path, int flags, mode_t mode)
+void createFile(const std::string& path, int flags, mode_t mode)
 {
-    int ret = ::open(path.c_str(), flags, mode);
-    if (ret < 0) {
-        LOGE("Failed to create file: path=host:"
-             << path
-             << ", msg: "
-             << getSystemErrorMessage());
-        return false;
-    }
-    close(ret);
-    return true;
+    utils::close(utils::open(path, O_CREAT | flags, mode));
 }
 
-bool createFifo(const std::string& path, mode_t mode)
+void createFifo(const std::string& path, mode_t mode)
 {
-    int ret = ::mkfifo(path.c_str(), mode);
-    if (ret < 0) {
-        LOGE("Failed to make fifo: path=host:" << path);
-        return false;
-    }
-    return true;
+    utils::mkfifo(path.c_str(), mode);
 }
 
-bool copyFile(const std::string& src, const std::string& dest)
+void copyFile(const std::string& src, const std::string& dest)
 {
     boost::system::error_code errorCode;
     fs::copy_file(src, dest, errorCode);
     if (errorCode) {
-        LOGE("Failed to copy file: msg: "
-             << errorCode.message()
-             << ", path=host:"
-             << src
-             << ", path=host:"
-             << dest);
-        return false;
+        THROW_UTILS_EXCEPTION_E("path=host:" << src << ": failed to copy file to path=host:"
+                                << dest << ", error: " << errorCode.message());
     }
-    bool retSmack = copySmackLabel(src, dest);
-    if (!retSmack) {
-        LOGE("Failed to copy file: msg: (can't copy smacklabel) "
-             << ", path=host:"
-             << src
-             << ", path=host:"
-             << dest);
+    try {
+        copySmackLabel(src, dest);
+    } catch(const UtilsException & e) {
+        std::string msg = "Failed to copy file: msg: (can't copy smacklabel), path=host:"
+             + src
+             + ", path=host:"
+             + dest + ".";
         fs::remove(src, errorCode);
         if (errorCode) {
-            LOGE("Failed to clean after copy failure: path=host:"
-                 << src
-                 << ", msg: "
-                 << errorCode.message());
+            msg += "\nFailed to clean after copy failure: path=host:"
+                 + src
+                 + ", msg: "
+                 + errorCode.message();
         }
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(msg, e.mErrno);
     }
-    return true;
 }
 
-bool createLink(const std::string& src, const std::string& dest)
+void createLink(const std::string& src, const std::string& dest)
 {
-    int retLink = ::link(src.c_str(), dest.c_str());
-    if (retLink < 0) {
-        LOGE("Failed to hard link: path=host:"
-             << src
-             << ", path=host:"
-             << dest
-             << ", msg:"
-             << getSystemErrorMessage());
-        return false;
-    }
-    bool retSmack = copySmackLabel(src, dest);
-    if (!retSmack) {
-        LOGE("Failed to copy smack label: path=host:"
-             << src
-             << ", path=host:"
-             << dest);
+    utils::link(src, dest);
+    try {
+        copySmackLabel(src, dest, false);
+    } catch(const UtilsException & e) {
+        std::string msg = "Failed to copy smack label: path=host:"
+             + src
+             + ", path=host:"
+             + dest + ".";
         boost::system::error_code ec;
         fs::remove(dest, ec);
         if (!ec) {
-            LOGE("Failed to clean after hard link creation failure: path=host:"
-                 << src
-                 << ", to: "
-                 << dest
-                 << ", msg: "
-                 << ec.message());
+            msg += "\nFailed to clean after hard link creation failure: path=host:"
+                 + src
+                 + ", to: "
+                 + dest
+                 + ", msg: "
+                 + ec.message();
         }
-        return false;
+        THROW_UTILS_EXCEPTION_ERRNO_E(msg, e.mErrno);
     }
-    return true;
 }
+
 
 } // namespace utils

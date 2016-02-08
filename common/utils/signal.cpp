@@ -35,66 +35,95 @@
 
 namespace utils {
 
-namespace {
-
-void setSignalMask(int how, const ::sigset_t& set)
+// ------------------- syscall wrappers -------------------
+void pthread_sigmask(int how, const ::sigset_t *set, ::sigset_t *get)
 {
-    int ret = ::pthread_sigmask(how, &set, nullptr /*&oldSet*/);
-    if(ret != 0) {
-        const std::string msg = "Error in pthread_sigmask: " + getSystemErrorMessage(ret);
-        LOGE(msg);
-        throw UtilsException(msg);
+    int ret = ::pthread_sigmask(how, set, get);
+    if (ret != 0) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in pthread_sigmask()", ret);
     }
 }
 
+void sigemptyset(::sigset_t *set)
+{
+    if (::sigemptyset(set) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigemptyset()", errno);
+    }
+}
+
+void sigfillset(::sigset_t *set)
+{
+    if(-1 == ::sigfillset(set)) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigfillset()", errno);
+    }
+}
+
+void sigaddset(::sigset_t *set, int signum)
+{
+    if (::sigaddset(set, signum) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigaddset()", errno);
+    }
+}
+
+void sigpending(::sigset_t *set)
+{
+    if (::sigpending(set) == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigpending()", errno);
+    }
+}
+
+bool sigismember(const ::sigset_t *set, int signum)
+{
+    int ret = ::sigismember(set, signum);
+    if (ret == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigismember()", errno);
+    }
+    return ret == 1;
+}
+
+int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *timeout)
+{
+    int ret = ::sigtimedwait(set, info, timeout);
+    if (ret == -1) {
+        if (errno == EAGAIN) {
+            return 0;
+        }
+
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigtimedwait()", errno);
+    }
+    return ret;
+}
+
+void sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
+{
+    if(-1 == ::sigaction(signum, act, oldact)) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigaction()", errno);
+    }
+}
+
+namespace {
 void changeSignal(int how, const int sigNum) {
     ::sigset_t set;
-    if(-1 == ::sigemptyset(&set)) {
-        const std::string msg = "Error in sigemptyset: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
-    if(-1 ==::sigaddset(&set, sigNum)) {
-        const std::string msg = "Error in sigaddset: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
-    setSignalMask(how, set);
+    utils::sigemptyset(&set);
+    utils::sigaddset(&set, sigNum);
+    utils::pthread_sigmask(how, &set, nullptr);
 }
-
 }// namespace
 
+// ------------------- higher level functions -------------------
 ::sigset_t getSignalMask()
 {
     ::sigset_t set;
-    int ret = ::pthread_sigmask(0 /*ignored*/, nullptr /*get the oldset*/, &set);
-    if(ret != 0) {
-        const std::string msg = "Error in pthread_sigmask: " + getSystemErrorMessage(ret);
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
+    utils::pthread_sigmask(0 /*ignored*/, nullptr /*get the oldset*/, &set);
     return set;
 }
 
 bool isSignalPending(const int sigNum)
 {
     ::sigset_t set;
-    if (::sigpending(&set) == -1) {
-        const std::string msg = "Error in sigpending: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
+    utils::sigpending(&set);
 
-    int ret = ::sigismember(&set, sigNum);
-    if (ret == -1) {
-        const std::string msg = "Error in sigismember: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
-    return ret;
+    return utils::sigismember(&set, sigNum);
 }
 
 bool waitForSignal(const int sigNum, int timeoutMs)
@@ -108,27 +137,12 @@ bool waitForSignal(const int sigNum, int timeoutMs)
     };
 
     ::sigset_t set;
-    if(-1 == ::sigemptyset(&set)) {
-        const std::string msg = "Error in sigemptyset: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
-    if(-1 ==::sigaddset(&set, sigNum)) {
-        const std::string msg = "Error in sigaddset: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
+    utils::sigemptyset(&set);
+    utils::sigaddset(&set, sigNum);
 
     ::siginfo_t info;
-    if (::sigtimedwait(&set, &info, &timeout) == -1) {
-        if (errno == EAGAIN) {
-            return false;
-        }
-
-        const std::string msg = "Error in sigtimedwait: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+    if(utils::sigtimedwait(&set, &info, &timeout) == 0) {
+        return false;
     }
 
     return true;
@@ -137,15 +151,7 @@ bool waitForSignal(const int sigNum, int timeoutMs)
 bool isSignalBlocked(const int sigNum)
 {
     ::sigset_t set = getSignalMask();
-
-    int ret = ::sigismember(&set, sigNum);
-    if(-1 == ret) {
-        const std::string msg = "Error in sigismember: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
-    return ret == 1;
+    return utils::sigismember(&set, sigNum);
 }
 
 void signalBlock(const int sigNum)
@@ -156,20 +162,11 @@ void signalBlock(const int sigNum)
 void signalBlockAllExcept(const std::initializer_list<int>& signals)
 {
     ::sigset_t set;
-    if(-1 == ::sigfillset(&set)) {
-        const std::string msg = "Error in sigfillset: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
+    utils::sigfillset(&set);
     for(const int s: signals) {
-        if(-1 == ::sigaddset(&set, s)) {
-            const std::string msg = "Error in sigaddset: " + getSystemErrorMessage();
-            LOGE(msg);
-            throw UtilsException(msg);
-        }
+        utils::sigaddset(&set, s);
     }
-    setSignalMask(SIG_BLOCK, set);
+    utils::pthread_sigmask(SIG_BLOCK, &set, nullptr);
 }
 
 void signalUnblock(const int sigNum)
@@ -185,11 +182,7 @@ std::vector<std::pair<int, struct ::sigaction>> signalIgnore(const std::initiali
     std::vector<std::pair<int, struct ::sigaction>> oldAct;
 
     for(const int s: signals) {
-        if(-1 == ::sigaction(s, &act, &old)) {
-            const std::string msg = "Error in sigaction: " + getSystemErrorMessage();
-            LOGE(msg);
-            throw UtilsException(msg);
-        }
+        utils::sigaction(s, &act, &old);
         oldAct.emplace_back(s, old);
     }
 
@@ -199,24 +192,15 @@ std::vector<std::pair<int, struct ::sigaction>> signalIgnore(const std::initiali
 struct ::sigaction signalSet(const int sigNum, const struct ::sigaction *sigAct)
 {
     struct ::sigaction old;
-
-    if(-1 == ::sigaction(sigNum, sigAct, &old)) {
-        const std::string msg = "Error in sigaction: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
+    utils::sigaction(sigNum, sigAct, &old);
     return old;
 }
 
 void sendSignal(const pid_t pid, const int sigNum)
 {
     if (-1 == ::kill(pid, sigNum)) {
-        const std::string msg = "Error during killing pid: " + std::to_string(pid) +
-                                " sigNum: " + std::to_string(sigNum) +
-                                ": "  + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error during killing pid: " << std::to_string(pid)
+                                      << " sigNum: " + std::to_string(sigNum), errno);
     }
 }
 

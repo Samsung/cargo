@@ -64,9 +64,8 @@ void waitForEvent(int fd,
     for (;;) {
         chr::milliseconds timeoutMS = chr::duration_cast<chr::milliseconds>(deadline - chr::high_resolution_clock::now());
         if (timeoutMS.count() < 0) {
-            LOGE("Timeout while waiting for event: " << std::hex << event <<
+            THROW_UTILS_EXCEPTION_E("Timeout while waiting for event: " << std::hex << event <<
                  " on fd: " << std::dec << fd);
-            throw UtilsException("Timeout");
         }
 
         int ret = ::poll(fds, 1 /*fds size*/, timeoutMS.count());
@@ -75,15 +74,11 @@ void waitForEvent(int fd,
             if (errno == EINTR) {
                 continue;
             }
-            const std::string msg = "Error in poll: " + getSystemErrorMessage();
-            LOGE(msg);
-            throw UtilsException(msg);
+            THROW_UTILS_EXCEPTION_ERRNO_E("Error in poll", errno);
         }
 
         if (ret == 0) {
-            const std::string msg = "Timeout in read";
-            LOGE(msg);
-            throw UtilsException(msg);
+            THROW_UTILS_EXCEPTION_E("Timeout in read");
         }
 
         if (fds[0].revents & event) {
@@ -92,9 +87,7 @@ void waitForEvent(int fd,
         }
 
         if (fds[0].revents & POLLHUP) {
-            const std::string msg = "Peer disconnected";
-            LOGW(msg);
-            throw UtilsException(msg);
+            THROW_UTILS_EXCEPTION_W("Peer disconnected");
         }
     }
 }
@@ -103,9 +96,7 @@ void setFDFlag(const int fd, const int getOp, const int setOp, const int flag, c
 {
     int ret = ::fcntl(fd, getOp);
     if (ret == -1) {
-        std::string msg = "fcntl(): Failed to get FD flags: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+        THROW_UTILS_EXCEPTION_ERRNO_E("fcntl(): Failed to get FD flags", errno);
     }
 
     if (set) {
@@ -115,9 +106,7 @@ void setFDFlag(const int fd, const int getOp, const int setOp, const int flag, c
     }
 
     if (ret == -1) {
-        std::string msg = "fcntl(): Failed to set FD flag: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+        THROW_UTILS_EXCEPTION_ERRNO_E("fcntl(): Failed to set FD flag", errno);
     }
 }
 
@@ -129,7 +118,6 @@ int open(const std::string &path, int flags, mode_t mode)
     assert(!((flags & O_CREAT) == O_CREAT || (flags & O_TMPFILE) == O_TMPFILE) || mode != static_cast<unsigned>(-1));
 
     int fd;
-
     for (;;) {
         fd = ::open(path.c_str(), flags, mode);
 
@@ -138,9 +126,7 @@ int open(const std::string &path, int flags, mode_t mode)
                 LOGT("open() interrupted by a signal, retrying");
                 continue;
             }
-            const std::string msg = "open() failed: " + path + ": " + getSystemErrorMessage();
-            LOGE(msg);
-            throw UtilsException(msg);
+            THROW_UTILS_EXCEPTION_ERRNO_E(path + ": open() failed", errno);
         }
         break;
     }
@@ -148,7 +134,7 @@ int open(const std::string &path, int flags, mode_t mode)
     return fd;
 }
 
-void close(int fd)
+void close(int fd) noexcept
 {
     if (fd < 0) {
         return;
@@ -173,9 +159,7 @@ void shutdown(int fd)
     }
 
     if (-1 == ::shutdown(fd, SHUT_RDWR)) {
-        std::string msg = "shutdown() failed: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+        THROW_UTILS_EXCEPTION_ERRNO_E("shutdown() failed", errno);
     }
 }
 
@@ -183,9 +167,7 @@ int ioctl(int fd, unsigned long request, void *argp)
 {
     int ret = ::ioctl(fd, request, argp);
     if (ret == -1) {
-        const std::string msg = "ioctl() failed: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+        THROW_UTILS_EXCEPTION_ERRNO_E("ioctl() failed", errno);
     }
     return ret;
 }
@@ -198,9 +180,7 @@ int dup2(int oldFD, int newFD, bool closeOnExec)
     }
     int fd = dup3(oldFD, newFD, flags);
     if (fd == -1) {
-        const std::string msg = "dup3() failed: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+        THROW_UTILS_EXCEPTION_ERRNO_E("dup3() failed", errno);
     }
     return fd;
 }
@@ -225,9 +205,7 @@ void write(int fd, const void* bufferPtr, const size_t size, int timeoutMS)
             // Neglected errors
             LOGD("Retrying write");
         } else {
-            const std::string msg = "Error during writing: " + getSystemErrorMessage();
-            LOGE(msg);
-            throw UtilsException(msg);
+            THROW_UTILS_EXCEPTION_ERRNO_E("Error during write()", errno);
         }
 
         waitForEvent(fd, POLLOUT, deadline);
@@ -251,17 +229,13 @@ void read(int fd, void* bufferPtr, const size_t size, int timeoutMS)
                 break;
             }
             if (n == 0) {
-                const std::string msg = "Peer disconnected";
-                LOGW(msg);
-                throw UtilsException(msg);
+                THROW_UTILS_EXCEPTION_W("Peer disconnected");
             }
         } else if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
             // Neglected errors
             LOGD("Retrying read");
         } else {
-            const std::string msg = "Error during reading: " + getSystemErrorMessage();
-            LOGE(msg);
-            throw UtilsException(msg);
+            THROW_UTILS_EXCEPTION_ERRNO_E("Error during read()", errno);
         }
 
         waitForEvent(fd, POLLIN, deadline);
@@ -271,10 +245,8 @@ void read(int fd, void* bufferPtr, const size_t size, int timeoutMS)
 unsigned int getMaxFDNumber()
 {
     struct rlimit rlim;
-    if (-1 ==  getrlimit(RLIMIT_NOFILE, &rlim)) {
-        const std::string msg = "Error during getrlimit: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+    if (-1 ==  ::getrlimit(RLIMIT_NOFILE, &rlim)) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error during getrlimit()", errno);
     }
     return rlim.rlim_cur;
 }
@@ -284,10 +256,8 @@ void setMaxFDNumber(unsigned int limit)
     struct rlimit rlim;
     rlim.rlim_cur = limit;
     rlim.rlim_max = limit;
-    if (-1 ==  setrlimit(RLIMIT_NOFILE, &rlim)) {
-        const std::string msg = "Error during setrlimit: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
+    if (-1 ==  ::setrlimit(RLIMIT_NOFILE, &rlim)) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error during setrlimit()", errno);
     }
 }
 
@@ -340,10 +310,10 @@ int fdRecv(int socket, const unsigned int timeoutMS)
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
                 // Neglected errors, retry
             } else {
-                throw UtilsException("Error during recvmsg: " + getSystemErrorMessage());
+                THROW_UTILS_EXCEPTION_ERRNO_E("Error during recvmsg()", errno);
             }
         } else if (ret == 0) {
-            throw UtilsException("Peer disconnected");
+            THROW_UTILS_EXCEPTION_W("Peer disconnected");
         } else {
             // We receive only 1 byte of data. No need to repeat
             break;
@@ -355,11 +325,11 @@ int fdRecv(int socket, const unsigned int timeoutMS)
     struct cmsghdr *cmhp;
     cmhp = CMSG_FIRSTHDR(&msgh);
     if (cmhp == NULL || cmhp->cmsg_len != CMSG_LEN(sizeof(int))) {
-        throw UtilsException("Bad cmsg length");
+        THROW_UTILS_EXCEPTION_D("Bad cmsg length");
     } else if (cmhp->cmsg_level != SOL_SOCKET) {
-        throw UtilsException("cmsg_level != SOL_SOCKET");
+        THROW_UTILS_EXCEPTION_D("cmsg_level != SOL_SOCKET");
     } else if (cmhp->cmsg_type != SCM_RIGHTS) {
-        throw UtilsException("cmsg_type != SCM_RIGHTS");
+        THROW_UTILS_EXCEPTION_D("cmsg_type != SCM_RIGHTS");
     }
 
     return *(reinterpret_cast<int*>(CMSG_DATA(cmhp)));
@@ -411,7 +381,7 @@ bool fdSend(int socket, int fd, const unsigned int timeoutMS)
             if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
                 // Neglected errors, retry
             } else {
-                throw UtilsException("Error during sendmsg: " + getSystemErrorMessage());
+                THROW_UTILS_EXCEPTION_ERRNO_E("Error during sendmsg()", errno);
             }
         } else if (ret == 0) {
             // Retry the sending
@@ -438,4 +408,3 @@ void setNonBlocking(int fd, bool nonBlocking)
 }
 
 } // namespace utils
-

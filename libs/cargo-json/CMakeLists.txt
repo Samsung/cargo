@@ -22,27 +22,20 @@ PROJECT(cargo-json)
 MESSAGE(STATUS "")
 MESSAGE(STATUS "Generating makefile for the lib${PROJECT_NAME}...")
 
-FILE(GLOB SRCS internals/*.cpp)
+FILE(GLOB HEADERS           *.hpp)
+FILE(GLOB HEADERS_INTERNALS internals/*.hpp)
 
 SET(_LIB_VERSION_ "${VERSION}")
 SET(_LIB_SOVERSION_ "0")
 SET(PC_FILE "lib${PROJECT_NAME}.pc")
 
 ## Setup target ################################################################
-ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRCS})
-SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES
-    SOVERSION   ${_LIB_SOVERSION_}
-    VERSION     ${_LIB_VERSION_}
-)
-
-ADD_DEPENDENCIES(${PROJECT_NAME} cargo-utils)
 
 ## Link libraries ##############################################################
 PKG_SEARCH_MODULE(JSON_C REQUIRED json json-c)
 
 INCLUDE_DIRECTORIES(${COMMON_FOLDER} ${LIBS_FOLDER})
 INCLUDE_DIRECTORIES(SYSTEM ${JSON_C_INCLUDE_DIRS})
-TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${JSON_C_LIBRARIES})
 
 ## Generate the pc file ########################################################
 CONFIGURE_FILE(${PC_FILE}.in ${CMAKE_CURRENT_BINARY_DIR}/${PC_FILE} @ONLY)
@@ -50,10 +43,6 @@ CONFIGURE_FILE(${PC_FILE}.in ${CMAKE_CURRENT_BINARY_DIR}/${PC_FILE} @ONLY)
 ## Install #####################################################################
 INSTALL(FILES       ${CMAKE_CURRENT_BINARY_DIR}/${PC_FILE}
         DESTINATION ${LIB_INSTALL_DIR}/pkgconfig)
-
-INSTALL(TARGETS     ${PROJECT_NAME}
-        DESTINATION ${LIB_INSTALL_DIR}
-        COMPONENT   RuntimeLibraries)
 
 INSTALL(DIRECTORY . DESTINATION ${INCLUDE_INSTALL_DIR}/${PROJECT_NAME}
         FILES_MATCHING PATTERN "*.hpp"

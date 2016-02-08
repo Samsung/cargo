@@ -8,5 +8,5 @@ includedir=@INCLUDE_INSTALL_DIR@
 Name: lib@PROJECT_NAME@
 Description: cargo Json library
 Version: @_LIB_VERSION_@
-Libs: -L${libdir} -l@PROJECT_NAME@ -l@JSON_C_LIBRARIES@
+Libs: -L${libdir} -l@JSON_C_LIBRARIES@
 Cflags: -I${includedir} -I${includedir}/@PROJECT_NAME@ -I@JSON_C_INCLUDE_DIRS@

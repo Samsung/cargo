@@ -38,6 +38,11 @@
 
 namespace utils {
 
+// ------------------- syscall wrappers -------------------
+// Throw exception on error
+int signalfd(int fd, const sigset_t *mask, int flags);
+
+// ------------------- higher level code -------------------
 /**
  * SignalFD takes control over handling signals
  * sent to the thread.

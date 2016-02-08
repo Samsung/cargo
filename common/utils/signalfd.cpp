@@ -34,23 +34,24 @@
 
 namespace utils {
 
+// ------------------- syscall wrappers -------------------
+int signalfd(int fd, const sigset_t *mask, int flags)
+{
+    int ret = ::signalfd(fd, mask, flags);
+    if (ret == -1) {
+        THROW_UTILS_EXCEPTION_ERRNO_E("Error in signalfd()", errno);
+    }
+    return ret;
+}
+
+
+// ------------------- higher level code -------------------
 SignalFD::SignalFD(cargo::ipc::epoll::EventPoll& eventPoll)
     :mEventPoll(eventPoll)
 {
-    int error = ::sigemptyset(&mSet);
-    if (error == -1) {
-        const std::string msg = "Error in sigemptyset: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
+    utils::sigemptyset(&mSet);
 
-    mFD = ::signalfd(-1, &mSet, SFD_CLOEXEC);
-    if (mFD == -1) {
-        const std::string msg = "Error in signalfd: " + getSystemErrorMessage();
-        LOGE(msg);
-        throw UtilsException(msg);
-    }
-
+    mFD = utils::signalfd(-1, &mSet, SFD_CLOEXEC);
     mEventPoll.addFD(mFD, EPOLLIN, std::bind(&SignalFD::handleInternal, this));
 }
 
@@ -89,26 +90,15 @@ void SignalFD::setHandler(const int sigNum, const Callback&& callback)
         mBlockedSignals.push_back(sigNum);
     }
 
-    int error = ::sigaddset(&mSet, sigNum);
-    if (error == -1) {
-        const std::string msg = getSystemErrorMessage();
-        LOGE("Error in signalfd: " << msg);
+    try {
+        utils::sigaddset(&mSet, sigNum);
+        utils::signalfd(mFD, &mSet, SFD_CLOEXEC);
+    } catch(...) {
         if(!isBlocked) {
             signalUnblock(sigNum);
             mBlockedSignals.pop_back();
         }
-        throw UtilsException("Error in signalfd: " + msg);
-    }
-
-    error = ::signalfd(mFD, &mSet, SFD_CLOEXEC);
-    if (error != mFD) {
-        const std::string msg = getSystemErrorMessage();
-        LOGE("Error in signalfd: " << msg);
-        if(!isBlocked) {
-            signalUnblock(sigNum);
-            mBlockedSignals.pop_back();
-        }
-        throw UtilsException("Error in signalfd: " + msg);
+        throw;
     }
 
     mCallbacks.insert({sigNum, callback});

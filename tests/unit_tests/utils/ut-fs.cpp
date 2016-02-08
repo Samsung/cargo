@@ -77,77 +77,71 @@ BOOST_AUTO_TEST_CASE(ReadFileContent)
     BOOST_CHECK_EQUAL(REFERENCE_FILE_CONTENT, readFileContent(REFERENCE_FILE_PATH));
     BOOST_CHECK_EXCEPTION(readFileContent(BUGGY_FILE_PATH),
                           UtilsException,
-                          WhatEquals("Read failed"));
+                          WhatEquals(BUGGY_FILE_PATH + ": could not open for reading"));
 }
 
 BOOST_AUTO_TEST_CASE(SaveFileContent)
 {
-    BOOST_REQUIRE(saveFileContent(FILE_PATH, REFERENCE_FILE_CONTENT));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(FILE_PATH, REFERENCE_FILE_CONTENT));
     BOOST_CHECK_EQUAL(REFERENCE_FILE_CONTENT, readFileContent(FILE_PATH));
 }
 
 BOOST_AUTO_TEST_CASE(RemoveFile)
 {
-    BOOST_REQUIRE(saveFileContent(FILE_PATH, REFERENCE_FILE_CONTENT));
-    BOOST_REQUIRE(removeFile(FILE_PATH));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(FILE_PATH, REFERENCE_FILE_CONTENT));
+    BOOST_REQUIRE_EQUAL(remove(FILE_PATH), true);
     BOOST_REQUIRE(!boost::filesystem::exists(FILE_PATH));
 }
 
 BOOST_AUTO_TEST_CASE(MountPoint)
 {
-    bool result;
     namespace fs = boost::filesystem;
     boost::system::error_code ec;
 
     BOOST_REQUIRE(fs::create_directory(MOUNT_POINT_1, ec));
-    BOOST_REQUIRE(isMountPoint(MOUNT_POINT_1, result));
-    BOOST_CHECK_EQUAL(result, false);
-    BOOST_REQUIRE(hasSameMountPoint(TEST_PATH, MOUNT_POINT_1, result));
-    BOOST_CHECK_EQUAL(result, true);
+    BOOST_REQUIRE_EQUAL(false, isMountPoint(MOUNT_POINT_1));
+    BOOST_REQUIRE_EQUAL(true, hasSameMountPoint(TEST_PATH, MOUNT_POINT_1));
 
-    BOOST_REQUIRE(mountRun(MOUNT_POINT_1));
-    BOOST_REQUIRE(isMountPoint(MOUNT_POINT_1, result));
-    BOOST_CHECK_EQUAL(result, true);
-    BOOST_REQUIRE(hasSameMountPoint(TEST_PATH, MOUNT_POINT_1, result));
-    BOOST_CHECK_EQUAL(result, false);
+    BOOST_REQUIRE_NO_THROW(mountRun(MOUNT_POINT_1));
+    BOOST_REQUIRE_EQUAL(true, isMountPoint(MOUNT_POINT_1));
+    BOOST_REQUIRE_EQUAL(false, hasSameMountPoint(TEST_PATH, MOUNT_POINT_1));
 
-    BOOST_REQUIRE(umount(MOUNT_POINT_1));
+    BOOST_REQUIRE_NO_THROW(utils::umount(MOUNT_POINT_1));
     BOOST_REQUIRE(fs::remove(MOUNT_POINT_1, ec));
 }
 
 BOOST_AUTO_TEST_CASE(MoveFile)
 {
-    namespace fs = boost::filesystem;
-    boost::system::error_code ec;
+    //namespace fs = boost::filesystem;
     std::string src, dst;
 
     // same mount point
     src = TEST_PATH + "/" + FILE_NAME_1;
     dst = TEST_PATH + "/" + FILE_NAME_2;
 
-    BOOST_REQUIRE(saveFileContent(src, REFERENCE_FILE_CONTENT));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(src, REFERENCE_FILE_CONTENT));
 
-    BOOST_CHECK(moveFile(src, dst));
-    BOOST_CHECK(!fs::exists(src));
+    BOOST_CHECK_NO_THROW(moveFile(src, dst));
+    BOOST_CHECK(!utils::exists(src));
     BOOST_CHECK_EQUAL(readFileContent(dst), REFERENCE_FILE_CONTENT);
 
-    BOOST_REQUIRE(fs::remove(dst));
+    BOOST_REQUIRE(utils::remove(dst));
 
     // different mount point
     src = TEST_PATH + "/" + FILE_NAME_1;
     dst = MOUNT_POINT_2 + "/" + FILE_NAME_2;
 
-    BOOST_REQUIRE(fs::create_directory(MOUNT_POINT_2, ec));
-    BOOST_REQUIRE(mountRun(MOUNT_POINT_2));
-    BOOST_REQUIRE(saveFileContent(src, REFERENCE_FILE_CONTENT));
+    BOOST_REQUIRE_NO_THROW(utils::createEmptyDir(MOUNT_POINT_2));
+    BOOST_REQUIRE_NO_THROW(mountRun(MOUNT_POINT_2));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(src, REFERENCE_FILE_CONTENT));
 
-    BOOST_CHECK(moveFile(src, dst));
-    BOOST_CHECK(!fs::exists(src));
+    BOOST_CHECK_NO_THROW(moveFile(src, dst));
+    BOOST_CHECK(!utils::exists(src));
     BOOST_CHECK_EQUAL(readFileContent(dst), REFERENCE_FILE_CONTENT);
 
-    BOOST_REQUIRE(fs::remove(dst));
-    BOOST_REQUIRE(umount(MOUNT_POINT_2));
-    BOOST_REQUIRE(fs::remove(MOUNT_POINT_2, ec));
+    BOOST_REQUIRE(utils::remove(dst));
+    BOOST_REQUIRE_NO_THROW(utils::umount(MOUNT_POINT_2));
+    BOOST_REQUIRE_NO_THROW(utils::rmdir(MOUNT_POINT_2));
 }
 
 BOOST_AUTO_TEST_CASE(CopyDirContents)
@@ -183,11 +177,11 @@ BOOST_AUTO_TEST_CASE(CopyDirContents)
     BOOST_REQUIRE(fs::create_directory(src_inner2, ec));
     BOOST_REQUIRE(ec.value() == 0);
 
-    BOOST_REQUIRE(saveFileContent(src + "/" + FILE_NAME_1, REFERENCE_FILE_CONTENT));
-    BOOST_REQUIRE(saveFileContent(src + "/" + FILE_NAME_2, FILE_CONTENT_2));
-    BOOST_REQUIRE(saveFileContent(src_inner + "/" + FILE_NAME_1, FILE_CONTENT_3));
-    BOOST_REQUIRE(saveFileContent(src_inner2 + "/" + FILE_NAME_1, FILE_CONTENT_3));
-    BOOST_REQUIRE(saveFileContent(src_inner2 + "/" + FILE_NAME_2, FILE_CONTENT_2));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(src + "/" + FILE_NAME_1, REFERENCE_FILE_CONTENT));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(src + "/" + FILE_NAME_2, FILE_CONTENT_2));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(src_inner + "/" + FILE_NAME_1, FILE_CONTENT_3));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(src_inner2 + "/" + FILE_NAME_1, FILE_CONTENT_3));
+    BOOST_REQUIRE_NO_THROW(saveFileContent(src_inner2 + "/" + FILE_NAME_2, FILE_CONTENT_2));
 
     // change permissions of src_inner2 directory
     fs::permissions(src_inner2, fs::owner_read, ec);
@@ -198,7 +192,7 @@ BOOST_AUTO_TEST_CASE(CopyDirContents)
     BOOST_REQUIRE(ec.value() == 0);
 
     // copy data
-    BOOST_CHECK(copyDirContents(src, dst));
+    BOOST_CHECK_NO_THROW(copyDirContents(src, dst));
 
     // check if copy is successful
     BOOST_CHECK(fs::exists(dst + "/" + FILE_NAME_1));

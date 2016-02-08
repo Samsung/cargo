@@ -36,6 +36,7 @@
 #include "cargo-ipc/epoll/glib-dispatcher.hpp"
 #include "utils/channel.hpp"
 #include "utils/glib-loop.hpp"
+#include "utils/fs.hpp"
 #include "utils/latch.hpp"
 #include "utils/value-latch.hpp"
 #include "utils/scoped-dir.hpp"
@@ -774,7 +775,7 @@ MULTI_FIXTURE_TEST_CASE(FDSendReceive, F, ThreadedFixture, GlibFixture)
     const char DATA[] = "Content of the file";
     {
         // Fill the file
-        fs::remove(TEST_FILE);
+        utils::remove(TEST_FILE);
         std::ofstream file(TEST_FILE);
         file << DATA;
         file.close();

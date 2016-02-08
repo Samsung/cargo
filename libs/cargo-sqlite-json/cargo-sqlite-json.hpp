@@ -26,12 +26,12 @@
 #ifndef CARGO_SQLITE_JSON_CARGO_SQLITE_JSON_HPP
 #define CARGO_SQLITE_JSON_CARGO_SQLITE_JSON_HPP
 
+#include "utils/fs.hpp"
 #include "cargo-json/internals/to-json-visitor.hpp"
 #include "cargo-sqlite/internals/to-kvstore-visitor.hpp"
 #include "cargo-json/internals/from-json-visitor.hpp"
 #include "cargo-sqlite/internals/from-kvstore-visitor.hpp"
 #include "cargo-sqlite/internals/from-kvstore-ignoring-visitor.hpp"
-#include "cargo-json/internals/fs-utils.hpp"
 // TODO: remove dependencies to other libraries internals
 
 namespace cargo {
@@ -77,10 +77,7 @@ void loadFromKVStoreWithJsonFile(const std::string& kvfile,
                                  Cargo& visitable,
                                  const std::string& kvVisitableName)
 {
-    std::string content;
-    if (!internals::fsutils::readFileContent(jsonfile, content)) {
-        throw CargoException("Could not load " + jsonfile);
-    }
+    const std::string content = utils::readFileContent(jsonfile);
     try {
         loadFromKVStoreWithJson(kvfile, content, visitable, kvVisitableName);
     } catch (CargoException& e) {

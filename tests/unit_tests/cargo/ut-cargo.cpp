@@ -27,6 +27,8 @@
 
 #include "ut.hpp"
 #include "testconfig-example.hpp"
+#include "utils/fs.hpp"
+#include "utils/fd-utils.hpp"
 #include "cargo-gvariant/cargo-gvariant.hpp"
 #include "cargo-fd/cargo-fd.hpp"
 #include "cargo-sqlite/cargo-sqlite.hpp"
@@ -335,7 +337,7 @@ BOOST_AUTO_TEST_CASE(FromToFD)
     loadFromJsonString(jsonTestString, config);
     // Setup fd
     std::string fifoPath = UT_PATH + "fdstore";
-    BOOST_CHECK(::mkfifo(fifoPath.c_str(), S_IWUSR | S_IRUSR) >= 0);
+    BOOST_CHECK_NO_THROW(utils::mkfifo(fifoPath, S_IWUSR | S_IRUSR));
     int fd = ::open(fifoPath.c_str(), O_RDWR);
     BOOST_REQUIRE(fd >= 0);
 
@@ -356,8 +358,9 @@ BOOST_AUTO_TEST_CASE(FromToInternetFD)
     loadFromJsonString(jsonTestString, config);
     // Setup fd
     std::string fifoPath = UT_PATH + "fdstore";
-    BOOST_CHECK(::mkfifo(fifoPath.c_str(), S_IWUSR | S_IRUSR) >= 0);
-    int fd = ::open(fifoPath.c_str(), O_RDWR);
+    BOOST_CHECK_NO_THROW(utils::mkfifo(fifoPath, S_IWUSR | S_IRUSR));
+    BOOST_REQUIRE(utils::access(fifoPath, O_RDWR));
+    int fd = utils::open(fifoPath.c_str(), O_RDWR);
     BOOST_REQUIRE(fd >= 0);
 
     // The test
@@ -368,7 +371,7 @@ BOOST_AUTO_TEST_CASE(FromToInternetFD)
     BOOST_CHECK_EQUAL(out, jsonTestString);
 
     // Cleanup
-    BOOST_CHECK(::close(fd) >= 0);
+    BOOST_CHECK_NO_THROW(utils::close(fd));
 }
 
 BOOST_AUTO_TEST_CASE(FromKVWithDefaults)

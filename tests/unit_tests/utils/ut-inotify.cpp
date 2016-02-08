@@ -89,7 +89,7 @@ BOOST_AUTO_TEST_CASE(CreateDeleteFileHandler)
     i.setHandler(TEST_DIR, IN_DELETE, [&](const std::string& name, uint32_t) {
         deleteResult.set(name);
     });
-    fs::remove(FILE_PATH);
+    utils::remove(FILE_PATH);
     BOOST_REQUIRE_EQUAL(deleteResult.get(), FILE_NAME);
 }
 
@@ -128,7 +128,7 @@ BOOST_AUTO_TEST_CASE(NoFalseEventHandler)
     i.setHandler(TEST_DIR, IN_CREATE, [&](const std::string& name, uint32_t) {
         createResult.set(name);
     });
-    fs::remove(FILE_PATH);
+    utils::remove(FILE_PATH);
     BOOST_REQUIRE_THROW(createResult.get(10), UtilsException);
 }
 
@@ -144,7 +144,7 @@ BOOST_AUTO_TEST_CASE(RemoveHandler)
     });
     i.removeHandler(TEST_DIR);
     utils::createFile(FILE_PATH, O_WRONLY | O_CREAT, 0666);
-    fs::remove(FILE_PATH);
+    utils::remove(FILE_PATH);
     BOOST_REQUIRE_THROW(createResult.get(10), UtilsException);
 }
 

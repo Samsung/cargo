@@ -49,7 +49,7 @@ SET_TARGET_PROPERTIES(${UT_SERVER_CODENAME} PROPERTIES
 )
 
 TARGET_LINK_LIBRARIES(${UT_SERVER_CODENAME} ${Boost_LIBRARIES}
-                      Logger cargo-json cargo-sqlite cargo-fd cargo-ipc cargo-validator)
+                      Logger ${JSON_C_LIBRARIES} cargo-sqlite cargo-fd cargo-ipc cargo-validator)
 
 IF(NOT WITHOUT_SYSTEMD)
 SET_TARGET_PROPERTIES(${SOCKET_TEST_CODENAME} PROPERTIES

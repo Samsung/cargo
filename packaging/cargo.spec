@@ -130,42 +130,18 @@ The package provides libcargo GVariant development module.
 %{_libdir}/pkgconfig/libcargo-gvariant.pc
 
 ## libcargo-json Package ######################################################
-%package -n libcargo-json
-Summary:            Cargo Json module
-Group:              Security/Other
-%if %{platform_type} == "TIZEN"
-BuildRequires:      libjson-devel >= 0.10
-Requires:           libjson >= 0.10
-%else
-BuildRequires:      json-c-devel
-Requires:           json-c
-%endif
-Requires(post):     /sbin/ldconfig
-Requires(postun):   /sbin/ldconfig
-
-%description -n libcargo-json
-The package provides libcargo Json module.
-
-%post -n libcargo-json -p /sbin/ldconfig
-
-%postun -n libcargo-json -p /sbin/ldconfig
-
-%files -n libcargo-json
-%defattr(644,root,root,755)
-%{_libdir}/libcargo-json.so.0
-%attr(755,root,root) %{_libdir}/libcargo-json.so.%{version}
-
 %package -n libcargo-json-devel
 Summary:        Development cargo Json module
 Group:          Development/Libraries
 Requires:       libcargo-devel = %{epoch}:%{version}-%{release}
-Requires:       libcargo-json = %{epoch}:%{version}-%{release}
 Requires:       boost-devel
 Requires:       pkgconfig(libLogger)
 %if %{platform_type} == "TIZEN"
 Requires:       libjson-devel >= 0.10
+BuildRequires:  libjson-devel >= 0.10
 %else
 Requires:       json-c-devel
+BuildRequires:  json-c-devel
 %endif
 
 %description -n libcargo-json-devel
@@ -173,7 +149,6 @@ The package provides libcargo Json development module.
 
 %files -n libcargo-json-devel
 %defattr(644,root,root,755)
-%{_libdir}/libcargo-json.so
 %{_includedir}/cargo-json
 %{_libdir}/pkgconfig/libcargo-json.pc
 

@@ -27,6 +27,7 @@
 #include "logger/logger.hpp"
 #include "utils/img.hpp"
 #include "utils/fs.hpp"
+#include "utils/fd-utils.hpp"
 #include "utils/paths.hpp"
 #include "utils/exception.hpp"
 
@@ -45,25 +46,32 @@ const unsigned long LOOP_MOUNT_POINT_FLAGS = MS_RDONLY;
 
 // Writes to ret if loop device (provided in loopdev arg) is free to use.
 // Returns true if check was successful, false if loop device FD was unavailable for some reason.
+// FIXME: function prone to races
 bool isLoopDevFree(const std::string& loopdev, bool& ret)
 {
+    int loopFD = -1;
     // initialize
     ret = false;
 
-    // open loop device FD
-    int loopFD = ::open(loopdev.c_str(), O_RDWR);
-    if (loopFD < 0) {
-        LOGD("Failed to open loop device descriptor: " << getSystemErrorMessage());
+    try
+    {
+        // open loop device FD
+        loopFD = utils::open(loopdev, O_RDWR);
+
+        // if ioctl with LOOP_GET_STATUS fails, device is not assigned and free to use
+        struct loop_info linfo;
+        try {
+            utils::ioctl(loopFD, LOOP_GET_STATUS, &linfo);
+        } catch(const UtilsException& e) {
+            ret = true;
+        }
+    } catch(const UtilsException& e) {
+        LOGE(loopdev << " error: " << e.what());
+        utils::close(loopFD);
         return false;
     }
 
-    // if ioctl with LOOP_GET_STATUS fails, device is not assigned and free to use
-    struct loop_info linfo;
-    if (::ioctl(loopFD, LOOP_GET_STATUS, &linfo)) {
-        ret = true;
-    }
-
-    ::close(loopFD);
+    utils::close(loopFD);
     return true;
 }
 
@@ -74,48 +82,40 @@ bool mountLoop(const std::string& img,
                unsigned long flags,
                const std::string& options)
 {
-    // to mount an image, we need to connect image FD with loop device FD
-    // get image file  FD
-    int fileFD = ::open(img.c_str(), O_RDWR);
-    if (fileFD < 0) {
-        LOGD("Failed to open image file descriptor: " << getSystemErrorMessage());
-        return false;
-    }
+    int fileFD = -1, loopFD = -1;
 
-    // get loop device FD
-    int loopFD = ::open(loopdev.c_str(), O_RDWR);
-    if (loopFD < 0) {
-        LOGD("Failed to open loop device descriptor: " << getSystemErrorMessage());
-        ::close(fileFD);
-        return false;
-    }
+    try
+    {
+        // to mount an image, we need to connect image FD with loop device FD
+        // get image file  FD
+        fileFD = utils::open(img, O_RDWR);
 
-    // set loop device
-    if (::ioctl(loopFD, LOOP_SET_FD, fileFD)) {
-        LOGD("Failed to assign loop device to image: " << getSystemErrorMessage());
-        ::close(fileFD);
-        ::close(loopFD);
-        return false;
-    }
+        // get loop device FD
+        loopFD = utils::open(loopdev, O_RDWR);
 
-    // mount loop device to path
-    if (::mount(loopdev.c_str(), path.c_str(), type.c_str(), flags, options.c_str()) != 0) {
-        LOGD("Mount failed for '" << path << "', options=" << options << ": " << getSystemErrorMessage());
+        // set loop device
+        utils::ioctl(loopFD, LOOP_SET_FD, reinterpret_cast<void*>(fileFD));
+
+        // mount loop device to path
+        utils::mount(loopdev, path, type, flags, options);
+
+        utils::close(fileFD);
+        utils::close(loopFD);
+        return true;
+    } catch(const utils::UtilsException& e) {
+        LOGE(path << " error: " << e.what());
         ::ioctl(loopFD, LOOP_CLR_FD, 0);
-        ::close(fileFD);
-        ::close(loopFD);
+        utils::close(fileFD);
+        utils::close(loopFD);
         return false;
     }
-
-    ::close(fileFD);
-    ::close(loopFD);
-    return true;
 }
 
 } // namespace
 
 // Finds first available loop device and returns its path through ret.
 // Returns false if an error occurs, or if all available loop devices are taken.
+// FIXME: function prone to races
 bool getFreeLoopDevice(std::string& ret)
 {
     for (unsigned int i = 0; i < 8; ++i) {
@@ -150,26 +150,22 @@ bool mountImage(const std::string& image, const std::string& path, const std::st
 
 bool umountImage(const std::string& path, const std::string& loopdev)
 {
-    if (::umount(path.c_str()) != 0) {
-        LOGD("Umount failed for '" << path << "': " << getSystemErrorMessage());
+    int loopFD = -1;
+
+    try
+    {
+        utils::umount(path);
+
+        // clear loop device
+        loopFD = utils::open(loopdev, O_RDWR);
+        utils::ioctl(loopFD, LOOP_CLR_FD, 0);
+        utils::close(loopFD);
+        return true;
+    } catch(const utils::UtilsException& e) {
+        LOGE(path << " error: " << e.what());
+        utils::close(loopFD);
         return false;
     }
-
-    // clear loop device
-    int loopFD = ::open(loopdev.c_str(), O_RDWR);
-    if (loopFD < 0) {
-        LOGD("Failed to open fd for loop device 0");
-        return false;
-    }
-
-    if (::ioctl(loopFD, LOOP_CLR_FD, 0) < 0) {
-        LOGD("Failed to clear loop device.");
-        close(loopFD);
-        return false;
-    }
-
-    close(loopFD);
-    return true;
 }
 
 bool copyImageContents(const std::string& img, const std::string& dst)
@@ -183,18 +179,20 @@ bool copyImageContents(const std::string& img, const std::string& dst)
         return false;
     }
 
-    const std::string mountPoint = createFilePath(dirName(img), "/mp/");
-    // create a mount point for copied image
-    if (!createEmptyDir(mountPoint)) {
-        LOGE("Cannot create mount point for copied image.");
+    std::string mountPoint;
+    try {
+        mountPoint = createFilePath(dirName(img), "/mp/");
+
+        // create a mount point for copied image
+        createEmptyDir(mountPoint);
+
+        // create dst directory
+        createEmptyDir(dst);
+    } catch(const utils::UtilsException & e) {
+        LOGE("Cannot copy image: " << e.what());
         return false;
     }
 
-    // create dst directory
-    if (!createEmptyDir(dst)) {
-        LOGE("Cannot create directory for data.");
-        return false;
-    }
 
     // find free loop device for image
     std::string loopdev;
@@ -212,8 +210,10 @@ bool copyImageContents(const std::string& img, const std::string& dst)
 
     // copy data
     LOGI("Beginning image copy");
-    if (!utils::copyDirContents(mountPoint, dst)) {
-        LOGE("Failed to copy image.");
+    try {
+        utils::copyDirContents(mountPoint, dst);
+    } catch(const utils::UtilsException & e) {
+        LOGE("Failed to copy image: " << e.what());
         utils::umountImage(mountPoint, loopdev);
         LOGD("Removing already copied data");
         fs::remove_all(fs::path(dst));
