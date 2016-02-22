@@ -40,35 +40,35 @@ void pthread_sigmask(int how, const ::sigset_t *set, ::sigset_t *get)
 {
     int ret = ::pthread_sigmask(how, set, get);
     if (ret != 0) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in pthread_sigmask()", ret);
+        THROW_EXCEPTION(UtilsException, "Error in pthread_sigmask()", ret);
     }
 }
 
 void sigemptyset(::sigset_t *set)
 {
     if (::sigemptyset(set) == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigemptyset()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in sigemptyset()", errno);
     }
 }
 
 void sigfillset(::sigset_t *set)
 {
     if(-1 == ::sigfillset(set)) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigfillset()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in sigfillset()", errno);
     }
 }
 
 void sigaddset(::sigset_t *set, int signum)
 {
     if (::sigaddset(set, signum) == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigaddset()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in sigaddset()", errno);
     }
 }
 
 void sigpending(::sigset_t *set)
 {
     if (::sigpending(set) == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigpending()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in sigpending()", errno);
     }
 }
 
@@ -76,7 +76,7 @@ bool sigismember(const ::sigset_t *set, int signum)
 {
     int ret = ::sigismember(set, signum);
     if (ret == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigismember()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in sigismember()", errno);
     }
     return ret == 1;
 }
@@ -89,7 +89,7 @@ int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *ti
             return 0;
         }
 
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigtimedwait()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in sigtimedwait()", errno);
     }
     return ret;
 }
@@ -97,7 +97,7 @@ int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *ti
 void sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
 {
     if(-1 == ::sigaction(signum, act, oldact)) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in sigaction()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in sigaction()", errno);
     }
 }
 
@@ -199,7 +199,7 @@ struct ::sigaction signalSet(const int sigNum, const struct ::sigaction *sigAct)
 void sendSignal(const pid_t pid, const int sigNum)
 {
     if (-1 == ::kill(pid, sigNum)) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error during killing pid: " << std::to_string(pid)
+        THROW_EXCEPTION(UtilsException, "Error during killing pid: " << std::to_string(pid)
                                       << " sigNum: " + std::to_string(sigNum), errno);
     }
 }

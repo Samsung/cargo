@@ -45,7 +45,7 @@ Inotify::Inotify(cargo::ipc::epoll::EventPoll& eventPoll)
 {
     mFD = ::inotify_init1(IN_CLOEXEC);
     if (mFD == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in inotify_init1()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in inotify_init1()", errno);
     }
 
     mEventPoll.addFD(mFD, EPOLLIN, std::bind(&Inotify::handleInternal, this));
@@ -84,7 +84,7 @@ void Inotify::setHandler(const std::string& path,
 
     int watchID = ::inotify_add_watch(mFD, path.c_str(), eventMask);
     if (-1 == watchID) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in inotify_add_watch()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in inotify_add_watch()", errno);
     }
 
     mHandlers.push_back({path, watchID, callback});
@@ -103,7 +103,7 @@ void Inotify::removeHandlerInternal(const std::string& path)
 
     // Unwatch the path
     if (-1 == ::inotify_rm_watch(mFD, it->watchID)) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in inotify_rm_watch()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in inotify_rm_watch()", errno);
     }
 
     mHandlers.erase(it);

@@ -44,7 +44,7 @@ EventPoll::EventPoll()
     : mPollFD(::epoll_create1(EPOLL_CLOEXEC))
 {
     if (mPollFD == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in epoll_create1()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in epoll_create1()", errno);
     }
 }
 
@@ -70,11 +70,11 @@ void EventPoll::addFD(const int fd, const Events events, Callback&& callback)
     std::lock_guard<Mutex> lock(mMutex);
 
     if (mCallbacks.find(fd) != mCallbacks.end()) {
-        THROW_UTILS_EXCEPTION_E("fd " << std::to_string(fd) << " already added");
+        THROW_EXCEPTION(UtilsException, "fd " << std::to_string(fd) << " already added");
     }
 
     if (!addFDInternal(fd, events)) {
-        THROW_UTILS_EXCEPTION_E("Could not add fd");
+        THROW_EXCEPTION(UtilsException, "Could not add fd");
     }
 
     mCallbacks.insert({fd, std::make_shared<Callback>(std::move(callback))});
@@ -85,7 +85,7 @@ void EventPoll::modifyFD(const int fd, const Events events)
 {
     // No need to lock as modify doesn't touch the mCallbacks map
     if (!modifyFDInternal(fd, events)) {
-        THROW_UTILS_EXCEPTION_E("Could not modify fd: " << std::to_string(fd));
+        THROW_EXCEPTION(UtilsException, "Could not modify fd: " << std::to_string(fd));
     }
 }
 
@@ -115,7 +115,7 @@ bool EventPoll::dispatchIteration(const int timeoutMs)
             if (errno == EINTR) {
                 continue;
             }
-            THROW_UTILS_EXCEPTION_ERRNO_E("Error in epoll_wait()", errno);
+            THROW_EXCEPTION(UtilsException, "Error in epoll_wait()", errno);
         }
 
         // callback could be removed in the meantime, so be careful, find it inside lock

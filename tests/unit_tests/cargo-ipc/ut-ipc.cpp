@@ -903,10 +903,16 @@ BOOST_AUTO_TEST_CASE(ConnectionLimit)
             }
         } catch (const EventFDException& e) {
             ret = EXIT_SUCCESS;
+        } catch (const UtilsException& e) {
+            if (e.mErrno == EMFILE) {
+                ret = EXIT_SUCCESS;
+            }
         } catch (const IPCSocketException& e) {
             if (e.getCode() == EMFILE) {
                 ret = EXIT_SUCCESS;
             }
+        } catch (...) {
+            LOGE("unknown exception");
         }
 
         utils::setMaxFDNumber(oldLimit);

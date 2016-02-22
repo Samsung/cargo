@@ -77,7 +77,7 @@ void ValueLatch<T>::set(const T& value)
 {
     std::unique_lock<std::mutex> lock(mMutex);
     if (mValue) {
-        THROW_UTILS_EXCEPTION_E("Cannot set value multiple times");
+        THROW_EXCEPTION(UtilsException, "Cannot set value multiple times");
     }
     mValue.reset(new T(value));
     mCondition.notify_one();
@@ -88,7 +88,7 @@ void ValueLatch<T>::set(T&& value)
 {
     std::unique_lock<std::mutex> lock(mMutex);
     if (mValue) {
-        THROW_UTILS_EXCEPTION_E("Cannot set value multiple times");
+        THROW_EXCEPTION(UtilsException, "Cannot set value multiple times");
     }
     mValue.reset(new T(std::move(value)));
     mCondition.notify_one();
@@ -115,7 +115,7 @@ T ValueLatch<T>::get(const unsigned int timeoutMs)
         std::unique_ptr<T> retValue(std::move(mValue));
         return T(std::move(*retValue));
     } else {
-        THROW_UTILS_EXCEPTION_E("Timeout occured");
+        THROW_EXCEPTION(UtilsException, "Timeout occured");
     }
 }
 

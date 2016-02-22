@@ -39,7 +39,7 @@ int signalfd(int fd, const sigset_t *mask, int flags)
 {
     int ret = ::signalfd(fd, mask, flags);
     if (ret == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in signalfd()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in signalfd()", errno);
     }
     return ret;
 }

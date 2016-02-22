@@ -47,7 +47,7 @@ std::string getxattr(const std::string &path, const std::string &name)
             return "";
         }
 
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in getxattr(" << path << ")", errno);
+        THROW_EXCEPTION(UtilsException, "Error in getxattr(" << path << ")", errno);
     }
 
     value[ret] = '\0';
@@ -64,7 +64,7 @@ std::string lgetxattr(const std::string &path, const std::string &name)
             return "";
         }
 
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in lgetxattr(" << path << ")", errno);
+        THROW_EXCEPTION(UtilsException, "Error in lgetxattr(" << path << ")", errno);
     }
 
     value[ret] = '\0';
@@ -78,7 +78,7 @@ void removexattr(const std::string &path, const std::string &name)
             return;
         }
 
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in removexattr(" << path << ")", errno);
+        THROW_EXCEPTION(UtilsException, "Error in removexattr(" << path << ")", errno);
     }
 }
 
@@ -89,7 +89,7 @@ void lremovexattr(const std::string &path, const std::string &name)
             return;
         }
 
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in lremovexattr(" << path << ")", errno);
+        THROW_EXCEPTION(UtilsException, "Error in lremovexattr(" << path << ")", errno);
     }
 }
 
@@ -97,7 +97,7 @@ void setxattr(const std::string &path, const std::string &name,
               const std::string &value, int flags)
 {
     if (::setxattr(path.c_str(), name.c_str(), value.c_str(), value.size(), flags) == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in setxattr(" << path << ")", errno);
+        THROW_EXCEPTION(UtilsException, "Error in setxattr(" << path << ")", errno);
     }
 }
 
@@ -105,7 +105,7 @@ void lsetxattr(const std::string &path, const std::string &name,
                const std::string &value, int flags)
 {
     if (::lsetxattr(path.c_str(), name.c_str(), value.c_str(), value.size(), flags) == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in setxattr(" << path << ")", errno);
+        THROW_EXCEPTION(UtilsException, "Error in setxattr(" << path << ")", errno);
     }
 }
 
@@ -144,7 +144,7 @@ std::string smackXattrName(SmackLabelType type)
     case SmackLabelType::SMACK_LABEL_IPOUT:
         return "security.SMACK64IPOUT";
     default:
-        THROW_UTILS_EXCEPTION_E("Wrong SMACK label type passed");
+        THROW_EXCEPTION(UtilsException, "Wrong SMACK label type passed");
     }
 }
 
@@ -174,7 +174,7 @@ void smackSetFileLabel(const std::string &path,
     const std::string xattrName = smackXattrName(labelType);
 
     if (label.size() > SMACK_LABEL_MAX_LEN) {
-        THROW_UTILS_EXCEPTION_E("SMACK label too long");
+        THROW_EXCEPTION(UtilsException, "SMACK label too long");
     }
 
     if (label.empty()) {

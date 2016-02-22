@@ -28,6 +28,7 @@
 
 #include "logger/logger.hpp"
 #include <vector>
+#include "utils/typeinfo.hpp"
 #include <stdexcept>
 
 namespace utils {
@@ -43,75 +44,85 @@ std::string getSystemErrorMessage(int err);
  * Base class for exceptions in utils
  */
 struct UtilsException : public std::runtime_error {
-    explicit UtilsException(const std::string& error,
-                            int errno_,
-                            const char *file,
-                            const char *func,
-                            int line,
-                            logger::LogLevel level = logger::LogLevel::DEBUG)
-        :   std::runtime_error(error),
-            mErrno(errno_),
-            mFile(std::string(file?file:__FILE__)),
-            mFunc(std::string(func?func:__func__)),
-            mLine((line!=-1)?__LINE__:line),
-            mLevel(level) {
-        if (logger::Logger::getLogLevel() <= mLevel) {
-            logger::Logger::logMessage(mLevel,
-                                       (mErrno!=0)?(error + " (errno: " + getSystemErrorMessage(mErrno) + ")"):error,
-                                       mFile,
-                                       mLine,
-                                       mFunc,
-                                       PROJECT_SOURCE_DIR);
+    explicit UtilsException(const std::string& msg, int err = 0)
+        :   std::runtime_error(msg),
+            mErrno(err),
+            mFile(""),
+            mLine(-1),
+            mFunc("")
+    {
+    }
+
+    void setLocation(const char *file, int line, const char *func = "")
+    {
+        mFile = file == NULL ? "" : file + sizeof(PROJECT_SOURCE_DIR);
+        mLine = line;
+        mFunc = func == NULL ? "" : func;
+    }
+
+    void log() const
+    {
+        if (logger::Logger::getLogLevel() <= logger::LogLevel::ERROR) {
+        const std::string& msg = what();
+        logger::Logger::logMessage(logger::LogLevel::ERROR,
+                                   "[" + utils::getTypeName(*this) + "] " +
+                                   (mErrno != 0 ? msg + ": " + getSystemErrorMessage(mErrno) + "(" + std::to_string(mErrno) + ")" : msg),
+                                   mFile,
+                                   mLine,
+                                   mFunc,
+                                   PROJECT_SOURCE_DIR);
         }
     }
 
-    explicit UtilsException(const std::string& error, int errno_)
-        :  UtilsException(error, errno_, nullptr, nullptr, -1) {}
-
-    explicit UtilsException(const std::string& error)
-        :  UtilsException(error, errno) {}
+    struct UtilsException& _setLocation(const char *file, int line, const char *func = "")
+    {
+        setLocation(file, line, func);
+        return *this;
+    }
+    struct UtilsException& _log()
+    {
+        log();
+        return *this;
+    }
 
     const int mErrno;
-    const std::string mFile;
-    const std::string mFunc;
-    const int mLine;
-    logger::LogLevel mLevel;
+    const char *mFile;
+    int mLine;
+    const char *mFunc;
 };
 
-#define THROW_UTILS_EXCEPTION__(LEVEL, MSG, ERRNO, FILE, LINE, FUNC)\
+#define THROW_EXCEPTION_IMPL(EXCEPTION_TYPE, MSG, ERRNO)            \
     do {                                                            \
-        int errnoTmp = ERRNO;                                       \
-        std::ostringstream messageStream__;                         \
-        messageStream__ << MSG;                                     \
-        throw UtilsException(messageStream__.str(),                 \
-                             errnoTmp,                              \
-                             FILE,                                  \
-                             FUNC,                                  \
-                             LINE,                                  \
-                             logger::LogLevel::LEVEL);              \
+        int _err = ERRNO;                                           \
+        std::ostringstream _msg;                                    \
+        _msg << MSG;                                                \
+        throw EXCEPTION_TYPE(_msg.str(), _err)                      \
+              ._setLocation(__FILE__, __LINE__,  __func__)          \
+              ._log();                                              \
     } while (0)
 
-#define THROW_UTILS_EXCEPTION_W(MSG) \
-    THROW_UTILS_EXCEPTION__(WARN, MSG, 0, __FILE__, __LINE__, __func__)
+#define THROW_EXCEPTION_3A(EXCEPTION_TYPE, MSG, ERRNO) \
+    THROW_EXCEPTION_IMPL(EXCEPTION_TYPE, MSG, ERRNO)
 
-#define THROW_UTILS_EXCEPTION_ERRNO_W(MSG, ERRNO) \
-    THROW_UTILS_EXCEPTION__(WARN, MSG, ERRNO, __FILE__, __LINE__, __func__)
+#define THROW_EXCEPTION_2A(EXCEPTION_TYPE, MSG) \
+    THROW_EXCEPTION_IMPL(EXCEPTION_TYPE, MSG, 0)
 
-#define THROW_UTILS_EXCEPTION_D(MSG) \
-    THROW_UTILS_EXCEPTION__(DEBUG, MSG, 0, __FILE__, __LINE__, __func__)
+#define THROW_EXCEPTION_1A(EXCEPTION_TYPE) \
+    THROW_EXCEPTION_IMPL(EXCEPTION_TYPE, "", 0)
 
-#define THROW_UTILS_EXCEPTION_ERRNO_D(MSG, ERRNO) \
-    THROW_UTILS_EXCEPTION__(DEBUG, MSG, ERRNO, __FILE__, __LINE__, __func__)
+#define THROW_CHOOSE(_1,_2,_3,F,...) F
 
-#define THROW_UTILS_EXCEPTION_E(MSG) \
-    THROW_UTILS_EXCEPTION__(ERROR, MSG, 0, __FILE__, __LINE__, __func__)
+#define THROW_EXCEPTION(...) THROW_CHOOSE(__VA_ARGS__,              \
+                                THROW_EXCEPTION_3A(__VA_ARGS__),    \
+                                THROW_EXCEPTION_2A(__VA_ARGS__),    \
+                                THROW_EXCEPTION_1A(__VA_ARGS__),    \
+                                )
 
-#define THROW_UTILS_EXCEPTION_ERRNO_E(MSG, ERRNO) \
-    THROW_UTILS_EXCEPTION__(ERROR, MSG, ERRNO, __FILE__, __LINE__, __func__)
+#define THROW_UTILS_EXCEPTION(...) THROW_EXCEPTION(UtilsException, __VA_ARGS__)
 
 struct EventFDException: public UtilsException {
 
-    explicit EventFDException(const std::string& error) : UtilsException(error) {}
+    explicit EventFDException(const std::string& msg, int err = 0) : UtilsException(msg, err) {}
 };
 
 

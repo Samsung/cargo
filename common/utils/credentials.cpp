@@ -36,21 +36,21 @@ namespace utils {
 void setgroups(const std::vector<gid_t>& gids)
 {
     if (::setgroups(gids.size(), gids.data()) == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in setgroups()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in setgroups()", errno);
     }
 }
 
 void setregid(const gid_t rgid, const gid_t egid)
 {
     if (::setregid(rgid, egid) == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in setregid()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in setregid()", errno);
     }
 }
 
 void setreuid(const uid_t ruid, const uid_t euid)
 {
     if (::setreuid(ruid, euid) == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in setreuid()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in setreuid()", errno);
     }
 }
 
@@ -58,7 +58,7 @@ pid_t setsid()
 {
     pid_t pid = ::setsid();
     if (pid == -1) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in setsid()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in setsid()", errno);
     }
     return pid;
 }

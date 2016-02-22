@@ -49,7 +49,7 @@ Channel::Channel(const bool closeOnExec)
     };
 
     if (::socketpair(AF_LOCAL, flags, 0, mSockets.data()) < 0) {
-        THROW_UTILS_EXCEPTION_ERRNO_E("Error in socketpair()", errno);
+        THROW_EXCEPTION(UtilsException, "Error in socketpair()", errno);
     }
 }
 

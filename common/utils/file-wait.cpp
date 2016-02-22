@@ -69,7 +69,7 @@ void waitForFile(const std::string& file, const unsigned int timeoutMs)
     }
 
     if (isWaiting) {
-        THROW_UTILS_EXCEPTION_D("No such file: " << file);
+        THROW_EXCEPTION(UtilsException, "Timeout waiting for file '" << file << "'");
     }
 }
 

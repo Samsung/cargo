@@ -44,15 +44,18 @@ BOOST_AUTO_TEST_CASE(SystemdSocket)
 {
     std::string readMessage;
 
-    {
+    try {
+        // try-catch block is needed to have access to created socket
         Socket socket = Socket::connectUNIX(socket_test::SOCKET_PATH);
+
         BOOST_REQUIRE_GT(socket.getFD(), -1);
 
         readMessage.resize(socket_test::TEST_MESSAGE.size());
         socket.read(&readMessage.front(), readMessage.size());
+        BOOST_REQUIRE_EQUAL(readMessage, socket_test::TEST_MESSAGE);
+    } catch (...) {
+        BOOST_CHECK_MESSAGE(false, "error connecting " + socket_test::SOCKET_PATH);
     }
-
-    BOOST_REQUIRE_EQUAL(readMessage, socket_test::TEST_MESSAGE);
 }
 #endif // HAVE_SYSTEMD
 
