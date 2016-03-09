@@ -27,6 +27,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 #include <sstream>
 
 namespace utils {
@@ -54,6 +55,19 @@ std::string toHexString(const void *data, unsigned len);
 
 template<typename T>
 std::string join(const std::vector<T>& vec, const char *delim)
+{
+    std::stringstream res;
+    for (const auto& s : vec) {
+        if (res.tellp()>0) {
+            res << delim;
+        }
+        res << s;
+    }
+    return res.str();
+}
+
+template<typename T>
+std::string join(const std::set<T>& vec, const char *delim)
 {
     std::stringstream res;
     for (const auto& s : vec) {
